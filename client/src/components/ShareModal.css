@@ -1,0 +1,134 @@
+.share-modal {
+  max-width: 440px;
+  width: 92%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.share-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.share-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent-light, #818cf8);
+}
+
+.share-modal-title h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.share-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.6rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  transition: color 0.2s;
+}
+
+.share-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.share-modal-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.share-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.share-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.share-item-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.share-code-value {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  font-family: monospace;
+}
+
+.share-link-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+  outline: none;
+}
+
+.share-link-input:focus {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.share-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-whatsapp {
+  background: #25d366;
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 10px;
+  transition: opacity 0.2s;
+}
+
+.btn-whatsapp:hover {
+  opacity: 0.9;
+  color: #fff;
+}

@@ -1,0 +1,13 @@
+{
+  "name": "bingo-multiplayer",
+  "version": "1.0.0",
+  "description": "Multiplayer Bingo Game",
+  "scripts": {
+    "start": "cd server && npm start",
+    "build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "install:all": "cd server && npm install && cd ../client && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

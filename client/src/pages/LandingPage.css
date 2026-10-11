@@ -1,0 +1,151 @@
+/* Landing Page */
+.landing-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 48px 24px;
+}
+
+.landing-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+  text-align: center;
+  width: 100%;
+  max-width: 680px;
+}
+
+.logo-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+
+
+/* BINGO Brand Logo */
+.bingo-brand-logo {
+  margin: 6px 0;
+}
+
+.tagline {
+  font-size: 1.15rem;
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 500;
+  max-width: 480px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Landing Buttons */
+.landing-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.landing-buttons > button {
+  min-width: 190px;
+}
+
+/* Feature Cards */
+.landing-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  background: rgba(18, 22, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg, 20px);
+  padding: 22px 18px;
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.feature-card:hover {
+  border-color: rgba(94, 106, 210, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(22, 28, 46, 0.85);
+}
+
+.feature-icon-bubble {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bubble-purple {
+  background: rgba(129, 140, 248, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.bubble-cyan {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.bubble-gold {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.feature-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feature-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.feature-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .landing-features {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .feature-card {
+    flex-direction: row;
+    text-align: left;
+    padding: 16px;
+  }
+  .landing-buttons > button {
+    width: 100%;
+  }
+}
+

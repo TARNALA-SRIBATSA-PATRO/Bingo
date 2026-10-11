@@ -1,0 +1,381 @@
+/* How to Play */
+.htp-page {
+  min-height: 100vh;
+  padding: 80px 24px 40px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.htp-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+.htp-subtitle { color: var(--text-secondary); margin-top: 8px; }
+
+.htp-steps { display: flex; flex-direction: column; gap: 28px; }
+
+.htp-step-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.htp-step-card:hover { border-color: var(--border-accent); box-shadow: var(--shadow-accent); }
+
+.htp-step-header {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+}
+.step-number {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--cyan));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: 0.95rem; color: #fff; flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(94, 106, 210, 0.3);
+}
+.step-icon-wrap {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px;
+  background: rgba(94, 106, 210, 0.15); color: #818cf8;
+  border: 1px solid rgba(94, 106, 210, 0.3);
+  flex-shrink: 0;
+}
+.htp-step-header h2 { font-size: 1.25rem; font-weight: 800; color: #f8fafc; margin: 0; }
+
+.htp-step-body { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+.htp-step-body p { color: var(--text-secondary); line-height: 1.7; font-size: 0.95rem; }
+
+.htp-step-visual { display: flex; justify-content: center; }
+
+/* Step Visuals Container */
+.htp-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px;
+  background: rgba(14, 18, 30, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius, 16px);
+  width: 100%;
+  max-width: 340px;
+  box-sizing: border-box;
+}
+
+/* Step 1: Room & Players */
+.htp-room-code-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 8px 18px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.code-label {
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.code-value {
+  font-family: 'Courier New', monospace;
+  font-weight: 900;
+  font-size: 1.15rem;
+  color: var(--accent-light, #7b88ff);
+  letter-spacing: 0.15em;
+}
+.code-copy-icon {
+  color: var(--text-muted);
+}
+.htp-players-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.htp-player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.chip-purple {
+  background: rgba(129, 140, 248, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  color: #a5b4fc;
+}
+.chip-cyan {
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  color: #67e8f9;
+}
+.chip-emerald {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+.host-crown {
+  color: #f59e0b;
+}
+
+/* Step 2: 5x5 Board Setup */
+.board-setup-visual {
+  gap: 12px;
+}
+.htp-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  background: rgba(10, 13, 22, 0.9);
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.htp-setup-cell {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #1f263d 0%, #151a2a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.htp-setup-cell.highlight {
+  border-color: var(--accent, #5e6ad2);
+  background: rgba(94, 106, 210, 0.25);
+  color: #c7d2fe;
+}
+.htp-setup-actions {
+  display: flex;
+  gap: 8px;
+}
+.setup-badge-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(94, 106, 210, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(94, 106, 210, 0.35);
+}
+.setup-badge-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+/* Step 3: Turn & Calling Numbers */
+.turn-visual {
+  gap: 14px;
+}
+.htp-turn-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--accent), #4f46e5);
+  border: 1px solid var(--accent-light, #7b88ff);
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(94, 106, 210, 0.4);
+}
+.htp-call-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.htp-call-cell {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+.htp-call-cell.caller-alex {
+  background: linear-gradient(180deg, #6366f1, #4f46e5);
+  border: 2px solid #a5b4fc;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+.htp-call-arrow {
+  font-size: 1.3rem;
+  color: var(--accent-light, #7b88ff);
+}
+.htp-call-marked-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+.caller-tag {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.tag-purple {
+  color: #a5b4fc;
+}
+.caller-tag-sub {
+  font-size: 0.72rem;
+  color: var(--green, #22c55e);
+  font-weight: 600;
+}
+
+/* Step 4: BINGO Illuminated Tracker */
+.bingo-visual {
+  gap: 14px;
+}
+.htp-bingo-tracker {
+  display: flex;
+  gap: 6px;
+}
+.htp-track-letter {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, #1e2438 0%, #131724 100%);
+  color: var(--text-muted, #64748b);
+  box-shadow: 0 4px 0 #0d101a;
+  user-select: none;
+}
+.htp-track-letter.lit {
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  border-color: #fde68a;
+  color: #fff;
+  box-shadow: 0 4px 0 #92400e, 0 6px 18px rgba(245, 158, 11, 0.5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transform: translateY(-2px);
+}
+.htp-line-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+.line-item {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+}
+.line-item.done {
+  border-left-color: var(--green, #22c55e);
+  color: #e2e8f0;
+}
+.line-item.pending {
+  border-left-color: var(--yellow, #eab308);
+  color: #fef08a;
+}
+.gold-text {
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+/* Step 5: Victory & Series Rematch */
+.win-visual {
+  gap: 12px;
+}
+.htp-win-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 8px 16px;
+  border-radius: var(--radius, 16px);
+  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.18);
+}
+.trophy-gold {
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+.htp-series-card {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.series-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.series-scores {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+}
+.score-item {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.score-item.leader {
+  color: #fbbf24;
+}
+.htp-rematch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #a5b4fc;
+  background: rgba(94, 106, 210, 0.14);
+  border: 1px solid rgba(94, 106, 210, 0.3);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.htp-footer {
+  text-align: center;
+  margin-top: 48px;
+}
+
+@media (max-width: 640px) {
+  .htp-step-body {
+    grid-template-columns: 1fr;
+  }
+  .htp-visual {
+    max-width: 100%;
+  }
+}

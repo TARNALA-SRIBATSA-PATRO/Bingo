@@ -1,0 +1,79 @@
+.sound-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(18, 22, 36, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary, #f8fafc);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sound-toggle-btn:hover {
+  background: rgba(26, 32, 54, 0.95);
+  border-color: var(--accent, #5e6ad2);
+  color: #fff;
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 4px 14px rgba(94, 106, 210, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.sound-toggle-btn:active {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.sound-toggle-btn.unmuted {
+  border-color: rgba(94, 106, 210, 0.5);
+  box-shadow: 0 2px 10px rgba(94, 106, 210, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.sound-toggle-btn.unmuted .sound-icon-wrap {
+  color: #818cf8;
+}
+
+.sound-toggle-btn.muted {
+  opacity: 0.75;
+  color: var(--text-muted, #94a3b8);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.sound-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Mini version for topbars */
+.sound-toggle-btn.mini {
+  width: 34px;
+  height: 34px;
+}
+
+/* Floating top-right position for pages without a complex topbar */
+.sound-toggle-floating {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  z-index: 100;
+}
+
+@media (max-width: 480px) {
+  .sound-toggle-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .sound-toggle-floating {
+    top: 12px;
+    right: 12px;
+  }
+}
