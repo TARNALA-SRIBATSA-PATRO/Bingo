@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
   padding: 48px 24px;
 }
 
@@ -15,31 +15,39 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 40px;
+  gap: 36px;
   text-align: center;
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
 }
 
 .logo-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
-
-
 
 /* BINGO Brand Logo */
 .bingo-brand-logo {
   margin: 6px 0;
 }
 
+.landing-h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
 .tagline {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   color: var(--text-secondary, #94a3b8);
   font-weight: 500;
-  max-width: 480px;
+  max-width: 520px;
   line-height: 1.6;
   margin: 0;
 }
@@ -57,13 +65,13 @@
   min-width: 190px;
 }
 
-/* Feature Cards */
+/* Feature Cards Grid */
 .landing-features {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .feature-card {
@@ -71,26 +79,26 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 14px;
+  gap: 12px;
   background: rgba(18, 22, 36, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-lg, 20px);
-  padding: 22px 18px;
+  padding: 20px 16px;
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
   backdrop-filter: blur(12px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .feature-card:hover {
-  border-color: rgba(94, 106, 210, 0.4);
+  border-color: rgba(134, 59, 255, 0.4);
   transform: translateY(-4px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   background: rgba(22, 28, 46, 0.85);
 }
 
 .feature-icon-bubble {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border-radius: 14px;
   display: flex;
   align-items: center;
@@ -102,6 +110,18 @@
   background: rgba(129, 140, 248, 0.15);
   color: #818cf8;
   border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.bubble-green {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.bubble-blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .bubble-cyan {
@@ -116,6 +136,12 @@
   border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
+.bubble-rose {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
 .feature-info {
   display: flex;
   flex-direction: column;
@@ -126,15 +152,67 @@
   font-size: 0.95rem;
   font-weight: 700;
   color: #f8fafc;
+  margin: 0;
 }
 
 .feature-desc {
   font-size: 0.8rem;
   color: var(--text-secondary, #94a3b8);
   line-height: 1.45;
+  margin: 0;
 }
 
-@media (max-width: 640px) {
+/* SEO FAQ Section */
+.landing-seo-section {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.seo-toggle-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.seo-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.seo-faq-content {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  text-align: left;
+  margin-top: 18px;
+  background: rgba(15, 20, 32, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-lg, 20px);
+  padding: 20px;
+}
+
+.seo-faq-item h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin: 0 0 6px 0;
+}
+
+.seo-faq-item p {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
   .landing-features {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -144,8 +222,10 @@
     text-align: left;
     padding: 16px;
   }
+  .seo-faq-content {
+    grid-template-columns: 1fr;
+  }
   .landing-buttons > button {
     width: 100%;
   }
 }
-
