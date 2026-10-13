@@ -89,10 +89,6 @@ export function GameProvider({ children }) {
       if (data.status === 'filling') {
         setGameOver(null);
       }
-      // If there are multiple players, cancel any inactivity warning
-      if (data.players && data.players.length > 1) {
-        setInactivityWarning(null);
-      }
     });
 
     socket.on('game:started', () => {
@@ -113,12 +109,15 @@ export function GameProvider({ children }) {
       showNotif(`${name} left the room`, 'warning');
     });
 
-    socket.on('room:inactivityWarning', ({ countdown = 10 }) => {
-      setInactivityWarning({ countdown });
+    socket.on('room:inactivityWarning', (payload) => {
+      setInactivityWarning(payload || { countdown: 10, isSolo: false });
     });
 
-    socket.on('room:inactivityCancelled', () => {
+    socket.on('room:inactivityCancelled', ({ savedBy } = {}) => {
       setInactivityWarning(null);
+      if (savedBy) {
+        showNotif(`${savedBy} kept the room active.`, 'success', 3000);
+      }
     });
 
     socket.on('room:deletedForInactivity', ({ message }) => {
@@ -250,7 +249,7 @@ export function GameProvider({ children }) {
   const keepRoomAlive = useCallback(() => {
     if (socket) socket.emit('room:keepAlive');
     setInactivityWarning(null);
-    showNotif('Room kept active.', 'success', 2500);
+    showNotif('You kept the room active.', 'success', 2500);
   }, [socket, showNotif]);
 
   const deleteRoomNow = useCallback(() => {
@@ -259,9 +258,9 @@ export function GameProvider({ children }) {
     leaveRoom();
   }, [socket, leaveRoom]);
 
-  // Activity heartbeat when alone in a room
+  // Activity heartbeat for all players while in a room
   useEffect(() => {
-    if (!socket || !roomData || roomData.players?.length !== 1) return;
+    if (!socket || !roomData) return;
 
     let lastSent = Date.now();
     const handleUserActivity = () => {

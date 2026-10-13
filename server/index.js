@@ -166,41 +166,42 @@ function checkSinglePlayerWin(room, io) {
   }
 }
 
-function touchRoomActivity(room) {
+function touchRoomActivity(room, savedBy = null) {
   if (!room) return;
   room.lastActivity = Date.now();
   if (room.deletionTimer) {
     clearTimeout(room.deletionTimer);
     room.deletionTimer = null;
-    io.to(room.id).emit('room:inactivityCancelled');
+    io.to(room.id).emit('room:inactivityCancelled', { savedBy });
   }
 }
 
-function startRoomDeletionCountdown(room) {
+function startRoomDeletionCountdown(room, isSolo, totalPlayers) {
   if (!room || room.deletionTimer) return;
   const roomId = room.id;
   
-  // Emit 10-second warning countdown to lone player
-  io.to(roomId).emit('room:inactivityWarning', { countdown: 10 });
+  // Emit 10-second warning countdown to all players in the room
+  io.to(roomId).emit('room:inactivityWarning', { 
+    countdown: 10,
+    isSolo,
+    totalPlayers
+  });
   
   room.deletionTimer = setTimeout(() => {
     const currentRoom = rooms[roomId];
     if (!currentRoom) return;
     
-    const activePlayers = Object.values(currentRoom.players).filter(p => p.connected !== false);
-    if (activePlayers.length <= 1) {
-      io.to(roomId).emit('room:deletedForInactivity', {
-        message: 'Room was closed due to inactivity.'
-      });
-      delete rooms[roomId];
-    } else {
-      currentRoom.deletionTimer = null;
-    }
+    io.to(roomId).emit('room:deletedForInactivity', {
+      message: 'Room was closed due to inactivity.'
+    });
+    delete rooms[roomId];
   }, 10000); // 10 seconds countdown
 }
 
-// Inactivity check: if lone player is inactive for 60 seconds, start 10s countdown
-const INACTIVITY_TIMEOUT_MS = 60 * 1000;
+// Inactivity thresholds:
+// 90 seconds if player is alone, 120 seconds if all players in multiplayer room are idle
+const SOLO_INACTIVITY_MS = 90 * 1000;
+const MULTI_INACTIVITY_MS = 120 * 1000;
 
 setInterval(() => {
   const now = Date.now();
@@ -212,19 +213,13 @@ setInterval(() => {
       continue;
     }
 
-    if (activePlayers.length === 1) {
-      if (!room.deletionTimer) {
-        const idleTime = now - (room.lastActivity || now);
-        if (idleTime >= INACTIVITY_TIMEOUT_MS) {
-          startRoomDeletionCountdown(room);
-        }
-      }
-    } else {
-      // More than 1 player in room, ensure any deletion countdown is cancelled
-      if (room.deletionTimer) {
-        clearTimeout(room.deletionTimer);
-        room.deletionTimer = null;
-        io.to(roomId).emit('room:inactivityCancelled');
+    if (!room.deletionTimer) {
+      const idleTime = now - (room.lastActivity || now);
+      const isSolo = activePlayers.length === 1;
+      const threshold = isSolo ? SOLO_INACTIVITY_MS : MULTI_INACTIVITY_MS;
+
+      if (idleTime >= threshold) {
+        startRoomDeletionCountdown(room, isSolo, activePlayers.length);
       }
     }
   }
@@ -599,7 +594,9 @@ io.on('connection', (socket) => {
     const roomId = socket.data.roomId;
     if (!roomId || !rooms[roomId]) return;
     const room = rooms[roomId];
-    touchRoomActivity(room);
+    const player = room.players[socket.id];
+    const playerName = player?.name || socket.data.name || 'A player';
+    touchRoomActivity(room, playerName);
   });
 
   // Player explicitly chose to delete room now from inactivity modal

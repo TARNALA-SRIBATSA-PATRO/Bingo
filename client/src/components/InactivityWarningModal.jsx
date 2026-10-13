@@ -51,7 +51,9 @@ export default function InactivityWarningModal() {
         </h3>
         
         <p id="inactivity-desc" className="inactivity-desc">
-          You are currently the only player in this room and no activity was detected.
+          {inactivityWarning.isSolo === false
+            ? `No activity has been detected from any player in this room. If any player clicks "Do Not Delete", the room will stay open for everyone.`
+            : `You are currently the only player in this room and no activity was detected.`}
         </p>
 
         <div className="inactivity-countdown-box">
