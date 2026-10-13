@@ -7,7 +7,7 @@ import {
   setPersistentPlayerName 
 } from '../utils/storageUtils';
 import SoundToggle from '../components/SoundToggle';
-import { ArrowLeftIcon, PlusIcon, KeyIcon, BotIcon, ZapIcon, SparklesIcon, ShieldIcon } from '../components/Icons';
+import { ArrowLeftIcon, PlusIcon, KeyIcon, BotIcon, ZapIcon, SparklesIcon, ShieldIcon, ChevronRightIcon } from '../components/Icons';
 import './Lobby.css';
 
 export default function Lobby() {
@@ -128,6 +128,9 @@ export default function Lobby() {
                   <span className="offline-pill">Offline Ready</span>
                 </div>
                 <div className="mode-desc">Practice solo vs AI in Beginner, Pro or Intermediate mode</div>
+              </div>
+              <div className="mode-card-arrow">
+                <ChevronRightIcon size={20} />
               </div>
             </button>
 
