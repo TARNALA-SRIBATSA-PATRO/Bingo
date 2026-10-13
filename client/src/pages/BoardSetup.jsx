@@ -362,9 +362,14 @@ export default function BoardSetup() {
  <ShuffleIcon size={14} />
  <span>Random Fill</span>
  </button>
- <button className="btn btn-sm btn-danger" onClick={handleClearBoard} type="button">
- <TrashIcon size={14} />
- <span>Clear</span>
+ <button
+ className="btn btn-sm btn-danger clear-icon-btn"
+ onClick={handleClearBoard}
+ type="button"
+ title="Clear Board"
+ aria-label="Clear Board"
+ >
+ <TrashIcon size={16} />
  </button>
  </div>
 

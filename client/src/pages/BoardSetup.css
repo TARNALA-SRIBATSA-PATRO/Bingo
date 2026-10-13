@@ -202,7 +202,31 @@
   width: 100%; max-width: 420px;
   display: flex; flex-direction: column; gap: 16px;
 }
-.controls-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.controls-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+.controls-row > button:not(.clear-icon-btn) {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  padding: 10px 14px;
+}
+.clear-icon-btn {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 10px);
+  flex-shrink: 0;
+}
 
 .manual-input-row {
   display: flex; flex-direction: column; gap: 10px;
@@ -348,6 +372,20 @@
   .setup-main { grid-template-columns: 1fr; }
   .players-sidebar { position: static; }
   .board-cell { font-size: 1rem; }
+  .controls-row {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .controls-row > button:not(.clear-icon-btn) {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    gap: 6px;
+  }
+  .clear-icon-btn {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -379,8 +417,32 @@
     width: 34px;
     height: 34px;
   }
+  .controls-row {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .controls-row > button:not(.clear-icon-btn) {
+    padding: 8px 6px;
+    font-size: 0.78rem;
+    gap: 4px;
+  }
+  .clear-icon-btn {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+  }
 }
 
 @media (max-width: 380px) {
   .board-cell { font-size: 0.9rem; }
+  .controls-row > button:not(.clear-icon-btn) {
+    padding: 7px 4px;
+    font-size: 0.74rem;
+    gap: 3px;
+  }
+  .clear-icon-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
 }
