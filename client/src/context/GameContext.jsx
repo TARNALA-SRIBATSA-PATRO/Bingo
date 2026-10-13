@@ -68,7 +68,7 @@ export function GameProvider({ children }) {
           ...p,
           ready: isPlaying ? Boolean(p.ready) : (p.id === 'bot-opponent' ? true : false),
           markedCells: new Set(p.markedCells || []),
-          bingoLines: new Set(p.bingoLines || [])
+          bingoLines: Array.isArray(p.bingoLines) ? p.bingoLines : [...(p.bingoLines || [])]
         }));
 
         const restoredRoom = {
@@ -218,7 +218,7 @@ export function GameProvider({ children }) {
       name: cleanName,
       board: [],
       markedCells: new Set(),
-      bingoLines: new Set(),
+      bingoLines: [],
       ready: false,
       wins: 0
     };
@@ -230,7 +230,7 @@ export function GameProvider({ children }) {
       board: [], // Hidden during match for fair play
       secretBoard: botBoard,
       markedCells: new Set(),
-      bingoLines: new Set(),
+      bingoLines: [],
       ready: true,
       wins: 0
     };
@@ -417,7 +417,7 @@ export function GameProvider({ children }) {
         board,
         ready: true,
         markedCells: new Set(),
-        bingoLines: new Set()
+        bingoLines: []
       };
 
       // 2. Refresh bot player
@@ -433,7 +433,7 @@ export function GameProvider({ children }) {
         secretBoard: botBoard,
         ready: true,
         markedCells: new Set(),
-        bingoLines: new Set()
+        bingoLines: []
       };
 
       // 3. Determine turn order following existing algorithm:
@@ -523,30 +523,30 @@ export function GameProvider({ children }) {
       if (userPlayer.board.flat().includes(number)) {
         newUserMarked.add(number);
       }
-      const newUserLines = new Set(checkBingoLines(userPlayer.board, newUserMarked));
+      const userCompletedLines = checkBingoLines(userPlayer.board, newUserMarked);
 
       // 2. Mark on bot board (fairly from bot's own secret board)
       const newBotMarked = new Set(botPlayer.markedCells);
       if (botBoard.flat().includes(number)) {
         newBotMarked.add(number);
       }
-      const newBotLines = new Set(checkBingoLines(botBoard, newBotMarked));
+      const botCompletedLines = checkBingoLines(botBoard, newBotMarked);
 
       const updatedUserPlayer = {
         ...userPlayer,
         markedCells: newUserMarked,
-        bingoLines: newUserLines
+        bingoLines: userCompletedLines
       };
 
       const updatedBotPlayer = {
         ...botPlayer,
         markedCells: newBotMarked,
-        bingoLines: newBotLines
+        bingoLines: botCompletedLines
       };
 
       // 3. Check for 5 lines victory (B-I-N-G-O)
       const winners = [];
-      if (newUserLines.size >= 5) {
+      if (userCompletedLines.length >= 5) {
         winners.push({
           id: updatedUserPlayer.id,
           name: updatedUserPlayer.name,
@@ -555,7 +555,7 @@ export function GameProvider({ children }) {
         updatedUserPlayer.wins = (updatedUserPlayer.wins || 0) + 1;
       }
 
-      if (newBotLines.size >= 5) {
+      if (botCompletedLines.length >= 5) {
         winners.push({
           id: updatedBotPlayer.id,
           name: updatedBotPlayer.name,
@@ -682,7 +682,7 @@ export function GameProvider({ children }) {
         board: [],
         ready: false,
         markedCells: new Set(),
-        bingoLines: new Set()
+        bingoLines: []
       };
 
       const resetBotPlayer = {
@@ -691,7 +691,7 @@ export function GameProvider({ children }) {
         secretBoard: newBotBoard,
         ready: true,
         markedCells: new Set(),
-        bingoLines: new Set()
+        bingoLines: []
       };
 
       const nextRoundRoom = {

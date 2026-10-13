@@ -98,42 +98,59 @@ export default function GamePage() {
  }, [turnIndex, isMyTurn, calledCount, gameIndex]);
 
  // Recompute SVG line coords whenever lines change or board resizes
- const myLinesKey = [...(myPlayer?.bingoLines || [])].sort().join(',');
- useEffect(() => {
- if (!boardRef.current || !myPlayer?.bingoLines?.length) {
- setLineCoords({});
- return;
- }
- const el = boardRef.current;
- const rect = el.getBoundingClientRect();
- setSvgSize({ w: rect.width, h: rect.height });
+ const myLinesList = useMemo(() => {
+   if (!myPlayer?.bingoLines) return [];
+   if (Array.isArray(myPlayer.bingoLines)) return myPlayer.bingoLines;
+   if (myPlayer.bingoLines instanceof Set || typeof myPlayer.bingoLines[Symbol.iterator] === 'function') {
+     return Array.from(myPlayer.bingoLines);
+   }
+   return [];
+ }, [myPlayer?.bingoLines]);
 
- const coords = {};
- for (const lineKey of myPlayer.bingoLines) {
- const c = computeLineCoords(el, lineKey);
- if (c) coords[lineKey] = c;
- }
- setLineCoords(coords);
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [myLinesKey, myPlayer?.board]);
+ const myLinesKey = useMemo(() => [...myLinesList].sort().join(','), [myLinesList]);
+
+ useEffect(() => {
+   if (!boardRef.current || myLinesList.length === 0) {
+     setLineCoords({});
+     return;
+   }
+
+   const updateCoords = () => {
+     if (!boardRef.current) return;
+     const el = boardRef.current;
+     const rect = el.getBoundingClientRect();
+     setSvgSize({ w: rect.width, h: rect.height });
+
+     const coords = {};
+     for (const lineKey of myLinesList) {
+       const c = computeLineCoords(el, lineKey);
+       if (c) coords[lineKey] = c;
+     }
+     setLineCoords(coords);
+   };
+
+   updateCoords();
+   const raf = requestAnimationFrame(updateCoords);
+   return () => cancelAnimationFrame(raf);
+ }, [myLinesKey, myPlayer?.board, myLinesList]);
 
  // Recalculate on window resize
  useEffect(() => {
- const onResize = () => {
- if (!boardRef.current || !myPlayer?.bingoLines?.length) return;
- const el = boardRef.current;
- const rect = el.getBoundingClientRect();
- setSvgSize({ w: rect.width, h: rect.height });
- const coords = {};
- for (const lineKey of myPlayer.bingoLines) {
- const c = computeLineCoords(el, lineKey);
- if (c) coords[lineKey] = c;
- }
- setLineCoords(coords);
- };
- window.addEventListener('resize', onResize);
- return () => window.removeEventListener('resize', onResize);
- }, [myPlayer?.bingoLines]);
+   const onResize = () => {
+     if (!boardRef.current || myLinesList.length === 0) return;
+     const el = boardRef.current;
+     const rect = el.getBoundingClientRect();
+     setSvgSize({ w: rect.width, h: rect.height });
+     const coords = {};
+     for (const lineKey of myLinesList) {
+       const c = computeLineCoords(el, lineKey);
+       if (c) coords[lineKey] = c;
+     }
+     setLineCoords(coords);
+   };
+   window.addEventListener('resize', onResize);
+   return () => window.removeEventListener('resize', onResize);
+ }, [myLinesKey, myLinesList]);
 
  if (!roomData || !myPlayer) return null;
 
