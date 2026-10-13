@@ -4,6 +4,7 @@ import { GameProvider } from './context/GameContext';
 import { AudioProvider } from './context/AudioContext';
 import Notification from './components/Notification';
 import GlobalModals from './components/GlobalModals';
+import InstallPwaButton from './components/InstallPwaButton';
 import LandingPage from './pages/LandingPage';
 import HowToPlay from './pages/HowToPlay';
 import Lobby from './pages/Lobby';
@@ -20,6 +21,7 @@ function App() {
             <div className="app-wrapper">
               <Notification />
               <GlobalModals />
+              <InstallPwaButton />
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/how-to-play" element={<HowToPlay />} />
