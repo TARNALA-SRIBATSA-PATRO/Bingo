@@ -37,10 +37,26 @@ export default function Lobby() {
     }
   }, []);
 
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => { setIsOffline(false); setError(''); };
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   function handleCreate(e) {
     e.preventDefault();
     const cleanName = name.trim();
     if (!cleanName) return setError('Please enter your name');
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return setError('You are offline. Could not connect to the internet to create a multiplayer room.');
+    }
     setPersistentPlayerName(cleanName);
     setLoading(true);
     setError('');
@@ -55,6 +71,9 @@ export default function Lobby() {
     const cleanName = name.trim();
     if (!cleanName) return setError('Please enter your name');
     if (!roomId.trim()) return setError('Please enter a Room ID');
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return setError('You are offline. Could not connect to the internet to join a multiplayer room.');
+    }
     setPersistentPlayerName(cleanName);
     setLoading(true);
     setError('');
@@ -248,7 +267,31 @@ export default function Lobby() {
                 </div>
               )}
 
-              {error && <div className="form-error">{error}</div>}
+              {isOffline && mode !== 'bot' && !error && (
+                <div className="offline-notice-banner">
+                  <span className="notice-icon">📶</span>
+                  <span>You appear to be offline. Multiplayer needs internet, but you can play with Bot offline anytime!</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="form-error offline-error-box">
+                  <div className="error-text-row">
+                    <span className="error-icon">⚠️</span>
+                    <span>{error}</span>
+                  </div>
+                  {mode !== 'bot' && (
+                    <button
+                      type="button"
+                      className="btn-switch-bot"
+                      onClick={() => { setMode('bot'); setError(''); }}
+                    >
+                      <BotIcon size={14} />
+                      <span>Play with Bot Offline Instead</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               <button type="submit" className="btn btn-primary submit-action-btn" disabled={loading}>
                 {loading

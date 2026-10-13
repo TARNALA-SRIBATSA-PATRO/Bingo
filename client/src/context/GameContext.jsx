@@ -301,33 +301,93 @@ export function GameProvider({ children }) {
   // MULTIPLAYER ROOM CREATION & JOINING
   // -------------------------------------------------------------
   const createRoom = useCallback((name, cb) => {
-    if (!socket) return;
     const cleanName = (name || '').trim();
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (cb) cb({ 
+        success: false, 
+        error: 'You appear to be offline. Could not connect to the internet to create a room. Try playing against BingoBot offline!' 
+      });
+      return;
+    }
+
+    if (!socket || !socket.connected) {
+      if (cb) cb({ 
+        success: false, 
+        error: 'Unable to connect to the game server. Please check your internet connection or try again in a few moments.' 
+      });
+      return;
+    }
+
+    let responded = false;
+    const timeout = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        if (cb) cb({
+          success: false,
+          error: 'Connection timed out. The server is currently unreachable. Please check your internet connection.'
+        });
+      }
+    }, 6000);
+
     socket.emit('room:create', { name: cleanName }, (res) => {
-      if (res.success) {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeout);
+      if (res?.success) {
         setPlayerName(cleanName);
         setPersistentPlayerName(cleanName);
         setPlayerId(res.playerId);
         saveSession({ playerName: cleanName, playerId: res.playerId, roomId: res.roomId, isBot: false });
         navigate('/board-setup');
       }
-      cb(res);
+      if (cb) cb(res || { success: false, error: 'Failed to create room' });
     });
   }, [socket, navigate]);
 
   const joinRoom = useCallback((name, roomId, cb) => {
-    if (!socket) return;
     const cleanRoomId = (roomId || '').trim().toUpperCase();
     const cleanName = (name || '').trim();
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (cb) cb({ 
+        success: false, 
+        error: 'You appear to be offline. Could not connect to the internet to join a room. Try playing against BingoBot offline!' 
+      });
+      return;
+    }
+
+    if (!socket || !socket.connected) {
+      if (cb) cb({ 
+        success: false, 
+        error: 'Unable to connect to the game server. Please check your internet connection or try again in a few moments.' 
+      });
+      return;
+    }
+
+    let responded = false;
+    const timeout = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        if (cb) cb({
+          success: false,
+          error: 'Connection timed out. The server is currently unreachable. Please check your internet connection.'
+        });
+      }
+    }, 6000);
+
     socket.emit('room:join', { name: cleanName, roomId: cleanRoomId }, (res) => {
-      if (res.success) {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeout);
+      if (res?.success) {
         setPlayerName(cleanName);
         setPersistentPlayerName(cleanName);
         setPlayerId(res.playerId);
         saveSession({ playerName: cleanName, playerId: res.playerId, roomId: cleanRoomId, isBot: false });
         navigate('/board-setup');
       }
-      cb(res);
+      if (cb) cb(res || { success: false, error: 'Failed to join room' });
     });
   }, [socket, navigate]);
 
