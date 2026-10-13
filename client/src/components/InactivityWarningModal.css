@@ -1,0 +1,193 @@
+.inactivity-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+  animation: inactFadeIn 0.25s ease-out;
+}
+
+@keyframes inactFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.inactivity-modal-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(20, 22, 34, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 24px;
+  padding: 34px 28px;
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.85),
+    0 0 35px rgba(245, 158, 11, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: inactPop 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes inactPop {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.inactivity-pulse-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  border: 2px solid rgba(245, 158, 11, 0.6);
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.35);
+  animation: inactPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes inactPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 32px rgba(245, 158, 11, 0.55);
+  }
+}
+
+.inactivity-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.02em;
+}
+
+.inactivity-desc {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0 0 22px 0;
+  max-width: 360px;
+}
+
+.inactivity-countdown-box {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.inactivity-countdown-label {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.inactivity-timer-num {
+  font-size: 2.8rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #f87171;
+  text-shadow: 0 0 16px rgba(248, 113, 113, 0.5);
+  animation: inactTick 1s infinite ease-out;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes inactTick {
+  0% { transform: scale(1.05); }
+  50% { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+.inactivity-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.inactivity-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444, #f59e0b);
+  border-radius: 999px;
+  transition: width 0.95s linear;
+}
+
+.inactivity-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inactivity-keep-btn {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.02rem;
+  font-weight: 800;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 0 #15803d, 0 8px 24px rgba(34, 197, 94, 0.4) !important;
+}
+
+.inactivity-keep-btn:hover {
+  background: linear-gradient(180deg, #2fd86d 0%, #1cb353 100%) !important;
+  box-shadow: 0 5px 0 #15803d, 0 10px 28px rgba(34, 197, 94, 0.5) !important;
+}
+
+.inactivity-delete-btn {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  color: #94a3b8;
+  border-radius: 12px;
+}
+
+.inactivity-delete-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+@media (max-width: 480px) {
+  .inactivity-modal-card {
+    padding: 26px 20px;
+    border-radius: 20px;
+  }
+  .inactivity-timer-num {
+    font-size: 2.4rem;
+  }
+  .inactivity-keep-btn {
+    font-size: 0.96rem;
+    padding: 13px 16px;
+  }
+}

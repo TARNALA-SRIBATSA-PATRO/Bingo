@@ -166,6 +166,70 @@ function checkSinglePlayerWin(room, io) {
   }
 }
 
+function touchRoomActivity(room) {
+  if (!room) return;
+  room.lastActivity = Date.now();
+  if (room.deletionTimer) {
+    clearTimeout(room.deletionTimer);
+    room.deletionTimer = null;
+    io.to(room.id).emit('room:inactivityCancelled');
+  }
+}
+
+function startRoomDeletionCountdown(room) {
+  if (!room || room.deletionTimer) return;
+  const roomId = room.id;
+  
+  // Emit 10-second warning countdown to lone player
+  io.to(roomId).emit('room:inactivityWarning', { countdown: 10 });
+  
+  room.deletionTimer = setTimeout(() => {
+    const currentRoom = rooms[roomId];
+    if (!currentRoom) return;
+    
+    const activePlayers = Object.values(currentRoom.players).filter(p => p.connected !== false);
+    if (activePlayers.length <= 1) {
+      io.to(roomId).emit('room:deletedForInactivity', {
+        message: 'Room was closed due to inactivity.'
+      });
+      delete rooms[roomId];
+    } else {
+      currentRoom.deletionTimer = null;
+    }
+  }, 10000); // 10 seconds countdown
+}
+
+// Inactivity check: if lone player is inactive for 60 seconds, start 10s countdown
+const INACTIVITY_TIMEOUT_MS = 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of Object.entries(rooms)) {
+    const activePlayers = Object.values(room.players).filter(p => p.connected !== false);
+
+    if (activePlayers.length === 0) {
+      delete rooms[roomId];
+      continue;
+    }
+
+    if (activePlayers.length === 1) {
+      if (!room.deletionTimer) {
+        const idleTime = now - (room.lastActivity || now);
+        if (idleTime >= INACTIVITY_TIMEOUT_MS) {
+          startRoomDeletionCountdown(room);
+        }
+      }
+    } else {
+      // More than 1 player in room, ensure any deletion countdown is cancelled
+      if (room.deletionTimer) {
+        clearTimeout(room.deletionTimer);
+        room.deletionTimer = null;
+        io.to(roomId).emit('room:inactivityCancelled');
+      }
+    }
+  }
+}, 5000);
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
@@ -196,7 +260,9 @@ io.on('connection', (socket) => {
       turnOrder: [],
       gameHistory: [],
       leftPlayers: {},
-      currentGameIndex: 1
+      currentGameIndex: 1,
+      lastActivity: Date.now(),
+      deletionTimer: null
     };
 
     socket.join(roomId);
@@ -240,6 +306,7 @@ io.on('connection', (socket) => {
     };
 
     room.players[socket.id] = player;
+    touchRoomActivity(room);
     socket.join(roomId);
     socket.data.roomId = roomId;
     socket.data.name = name;
@@ -254,6 +321,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return cb({ success: false, error: 'Room not found' });
 
+    touchRoomActivity(room);
     const player = room.players[socket.id];
     if (!player) return cb({ success: false, error: 'Player not found' });
 
@@ -283,6 +351,7 @@ io.on('connection', (socket) => {
     if (!room) return cb({ success: false, error: 'Room not found' });
     if (room.creatorId !== socket.id) return cb({ success: false, error: 'Only creator can start' });
 
+    touchRoomActivity(room);
     const players = Object.values(room.players);
     if (players.length < 2) return cb({ success: false, error: 'Need at least 2 players' });
     if (!players.every(p => p.ready)) return cb({ success: false, error: 'All players must be ready' });
@@ -318,6 +387,7 @@ io.on('connection', (socket) => {
     if (!room) return cb({ success: false, error: 'Room not found' });
     if (room.status !== 'playing') return cb({ success: false, error: 'Game not in progress' });
 
+    touchRoomActivity(room);
     const currentPlayerId = room.turnOrder[room.currentTurnIndex];
     if (socket.id !== currentPlayerId) return cb({ success: false, error: 'Not your turn' });
     if (room.calledNumbers.includes(number)) return cb({ success: false, error: 'Number already called' });
@@ -378,6 +448,7 @@ io.on('connection', (socket) => {
     if (!room) return cb({ success: false, error: 'Room not found' });
     if (room.creatorId !== socket.id) return cb({ success: false, error: 'Only creator can replay' });
 
+    touchRoomActivity(room);
     room.currentGameIndex++;
     room.status = 'filling';
     room.calledNumbers = [];
@@ -408,6 +479,7 @@ io.on('connection', (socket) => {
     if (room.creatorId !== socket.id) return cb({ success: false, error: 'Only creator can transfer privilege' });
     if (!room.players[targetId]) return cb({ success: false, error: 'Target player not found' });
 
+    touchRoomActivity(room);
     room.creatorId = targetId;
     cb({ success: true });
     broadcastRoom(room);
@@ -449,6 +521,9 @@ io.on('connection', (socket) => {
     if (Object.keys(room.players).length === 0) {
       delete rooms[roomId];
     } else {
+      if (Object.keys(room.players).length === 1) {
+        touchRoomActivity(room);
+      }
       checkSinglePlayerWin(room, io);
       broadcastRoom(room);
       io.to(roomId).emit('player:left', { name: socket.data.name });
@@ -500,12 +575,41 @@ io.on('connection', (socket) => {
     
     if (room.creatorId === oldId) room.creatorId = socket.id;
 
+    touchRoomActivity(room);
     socket.join(roomId);
     socket.data.roomId = roomId;
     socket.data.name = name;
 
     cb({ success: true, roomId, playerId: socket.id, status: room.status });
     broadcastRoom(room);
+  });
+
+  // Player activity heartbeat from client
+  socket.on('room:activity', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    const room = rooms[roomId];
+    if (!room.deletionTimer) {
+      room.lastActivity = Date.now();
+    }
+  });
+
+  // Player clicked "Do Not Delete" button in inactivity countdown modal
+  socket.on('room:keepAlive', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    const room = rooms[roomId];
+    touchRoomActivity(room);
+  });
+
+  // Player explicitly chose to delete room now from inactivity modal
+  socket.on('room:deleteNow', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    delete rooms[roomId];
+    socket.emit('room:deletedForInactivity', {
+      message: 'Room was closed.'
+    });
   });
 
   socket.on('disconnect', () => {
@@ -546,6 +650,10 @@ io.on('connection', (socket) => {
       if (Object.keys(room.players).length === 0) {
         delete rooms[roomId];
         return;
+      }
+
+      if (Object.keys(room.players).length === 1) {
+        touchRoomActivity(room);
       }
 
       checkSinglePlayerWin(room, io);

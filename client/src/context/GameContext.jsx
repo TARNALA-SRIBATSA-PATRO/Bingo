@@ -32,6 +32,7 @@ export function GameProvider({ children }) {
   const [notification, setNotification] = useState(null);
   const [gameOver, setGameOver] = useState(null);
   const [shareModalData, setShareModalData] = useState(null);
+  const [inactivityWarning, setInactivityWarning] = useState(null);
   const notifTimer = useRef(null);
 
   // Load session on mount
@@ -88,6 +89,10 @@ export function GameProvider({ children }) {
       if (data.status === 'filling') {
         setGameOver(null);
       }
+      // If there are multiple players, cancel any inactivity warning
+      if (data.players && data.players.length > 1) {
+        setInactivityWarning(null);
+      }
     });
 
     socket.on('game:started', () => {
@@ -108,12 +113,33 @@ export function GameProvider({ children }) {
       showNotif(`${name} left the room`, 'warning');
     });
 
+    socket.on('room:inactivityWarning', ({ countdown = 10 }) => {
+      setInactivityWarning({ countdown });
+    });
+
+    socket.on('room:inactivityCancelled', () => {
+      setInactivityWarning(null);
+    });
+
+    socket.on('room:deletedForInactivity', ({ message }) => {
+      setInactivityWarning(null);
+      clearSession();
+      setRoomData(null);
+      setPlayerId('');
+      setGameOver(null);
+      showNotif(message || 'Room was closed due to inactivity.', 'warning', 5000);
+      navigate('/');
+    });
+
     return () => {
       socket.off('room:update');
       socket.off('game:started');
       socket.off('game:replaying');
       socket.off('game:over');
       socket.off('player:left');
+      socket.off('room:inactivityWarning');
+      socket.off('room:inactivityCancelled');
+      socket.off('room:deletedForInactivity');
     };
   }, [socket, navigate, showNotif]);
 
@@ -221,6 +247,47 @@ export function GameProvider({ children }) {
     navigate('/');
   }, [navigate, socket]);
 
+  const keepRoomAlive = useCallback(() => {
+    if (socket) socket.emit('room:keepAlive');
+    setInactivityWarning(null);
+    showNotif('Room kept active.', 'success', 2500);
+  }, [socket, showNotif]);
+
+  const deleteRoomNow = useCallback(() => {
+    if (socket) socket.emit('room:deleteNow');
+    setInactivityWarning(null);
+    leaveRoom();
+  }, [socket, leaveRoom]);
+
+  // Activity heartbeat when alone in a room
+  useEffect(() => {
+    if (!socket || !roomData || roomData.players?.length !== 1) return;
+
+    let lastSent = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle activity pings to once every 15 seconds
+      if (now - lastSent >= 15000) {
+        lastSent = now;
+        socket.emit('room:activity');
+      }
+    };
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('mousedown', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('touchstart', handleUserActivity);
+    window.addEventListener('scroll', handleUserActivity);
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('mousedown', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      window.removeEventListener('scroll', handleUserActivity);
+    };
+  }, [socket, roomData]);
+
   const myPlayer = roomData?.players?.find(p => p.id === playerId) || null;
   const isCreator = roomData?.creatorId === playerId;
   const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === playerId;
@@ -236,7 +303,8 @@ export function GameProvider({ children }) {
       actualLeaveRoom: leaveRoom,
       transferCreator,
       showLeaveModal, setShowLeaveModal,
-      shareModalData, setShareModalData
+      shareModalData, setShareModalData,
+      inactivityWarning, keepRoomAlive, deleteRoomNow
     }}>
       {children}
     </GameContext.Provider>
