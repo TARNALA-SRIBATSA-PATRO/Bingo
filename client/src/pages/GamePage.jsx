@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { buildPlayerColorMap } from '../utils/playerColors';
 import SoundToggle from '../components/SoundToggle';
-import { CopyIcon, ShareIcon, CrownIcon, TrophyIcon, CrosshairIcon, CheckIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon } from '../components/Icons';
+import { CopyIcon, ShareIcon, CrownIcon, TrophyIcon, CrosshairIcon, CheckIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon, BotIcon, EyeIcon } from '../components/Icons';
 import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './GamePage.css';
 
@@ -137,6 +137,7 @@ export default function GamePage() {
 
  if (!roomData || !myPlayer) return null;
 
+ const isBot = Boolean(roomData?.isBot);
  const players = roomData.players || [];
  const calledNumbers = roomData.calledNumbers || [];
  const calledHistory = roomData.calledHistory || [];
@@ -215,6 +216,17 @@ export default function GamePage() {
  {/*  Top bar  */}
  <div className="game-topbar">
  <div className="topbar-left">
+ {isBot ? (
+ <div className="bot-match-chip">
+ <div className="bot-chip-icon">
+ <BotIcon size={16} />
+ </div>
+ <span className="bot-chip-name">vs BingoBot</span>
+ <span className={`diff-chip-tag diff-${roomData.difficulty || 'pro'}`}>
+ {(roomData.difficulty || 'pro').toUpperCase()}
+ </span>
+ </div>
+ ) : (
  <div className="room-id-chip">
  <span className="chip-label">ROOM</span>
  <span className="chip-value">{roomData.id}</span>
@@ -237,13 +249,14 @@ export default function GamePage() {
  <ShareIcon size={14} />
  </button>
  </div>
+ )}
  </div>
 
  <div className="topbar-center">
  <div className="game-index-chip">Round #{roomData.currentGameIndex}</div>
  <div
- className={`turn-chip ${isMyTurn ? 'my-turn' : ''}`}
- style={isMyTurn ? {} : { borderColor: playerColorMap[currentTurnId]?.border, color: playerColorMap[currentTurnId]?.text }}
+ className={`turn-chip ${isMyTurn ? 'my-turn' : isBot ? 'bot-turn' : ''}`}
+ style={isMyTurn ? {} : !isBot ? { borderColor: playerColorMap[currentTurnId]?.border, color: playerColorMap[currentTurnId]?.text } : {}}
  >
  {isMyTurn ? (
  <>
@@ -251,6 +264,11 @@ export default function GamePage() {
  <span className="turn-label-desktop">Your Turn — Select a Number</span>
  <span className="turn-label-mobile">Your Turn</span>
  </>
+ ) : isBot ? (
+ <div className="bot-turn-thinking">
+ <BotIcon size={15} />
+ <span>BingoBot is thinking...</span>
+ </div>
  ) : (
  <span>{currentTurnPlayer?.name || '...'}'s Turn</span>
  )}
@@ -382,12 +400,21 @@ export default function GamePage() {
  )}
 
  {!isMyTurn && roomData.status === 'playing' && (
- <div className="waiting-turn-msg" style={{ borderColor: playerColorMap[currentTurnId]?.border }}>
+ <div className={`waiting-turn-msg ${isBot ? 'waiting-bot-msg' : ''}`} style={!isBot ? { borderColor: playerColorMap[currentTurnId]?.border } : {}}>
+ {isBot ? (
+ <div className="bot-eval-thinking">
+ <BotIcon size={16} />
+ <span>BingoBot is evaluating its board...</span>
+ </div>
+ ) : (
+ <>
  Waiting for{' '}
  <strong style={{ color: playerColorMap[currentTurnId]?.text }}>
  {currentTurnPlayer?.name}
  </strong>{' '}
  to call a number...
+ </>
+ )}
  </div>
  )}
  </div>
@@ -419,7 +446,7 @@ export default function GamePage() {
 
  {/* Other players */}
  <div className="other-players">
- <h3>Other Players</h3>
+ <h3>{isBot ? 'Opponent' : 'Other Players'}</h3>
  {players.filter(p => p.id !== playerId).map(p => {
  const pLines = new Set(p.bingoLines || []);
  const isCurrentTurn = p.id === currentTurnId;
@@ -427,17 +454,22 @@ export default function GamePage() {
  return (
  <div
  key={p.id}
- className={`other-player-card ${isCurrentTurn ? "active-turn" : ""}`}
+ className={`other-player-card ${isCurrentTurn ? "active-turn" : ""} ${isBot ? "bot-player-card" : ""}`}
  style={isCurrentTurn ? { borderColor: color?.border, boxShadow: `0 0 12px ${color?.border}44` } : {}}
  >
  <div className="opc-header">
  <span className="opc-name" style={{ color: color?.text }}>
+ {isBot && <BotIcon size={15} style={{ marginRight: 5, verticalAlign: 'middle' }} />}
  <span>{p.name}</span>
- {p.id === roomData.creatorId && (
+ {isBot ? (
+ <span className={`diff-tag diff-${roomData.difficulty || 'pro'}`} style={{ marginLeft: 6 }}>
+ {(roomData.difficulty || 'pro').toUpperCase()}
+ </span>
+ ) : p.id === roomData.creatorId ? (
  <span className="creator-badge" title="Room Host">
  <CrownIcon size={12} />
  </span>
- )}
+ ) : null}
  {isCurrentTurn && <span className="opc-turn-pill">Turn</span>}
  </span>
  <div className="opc-bingo-mini">

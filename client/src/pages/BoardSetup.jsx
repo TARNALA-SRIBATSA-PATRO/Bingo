@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import SoundToggle from '../components/SoundToggle';
 import StartGameModal from '../components/StartGameModal';
-import { CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon, PlayIcon, TrophyIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon } from '../components/Icons';
+import { CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon, PlayIcon, TrophyIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon, BotIcon } from '../components/Icons';
 import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './BoardSetup.css';
 
@@ -240,12 +240,13 @@ export default function BoardSetup() {
     }
   };
 
+  const isBot = Boolean(roomData?.isBot);
   const players = roomData?.players || [];
   const readyCount = players.filter(p => p.ready).length;
   const allReady = players.length >= 2 && readyCount === players.length;
 
   useEffect(() => {
-    if (isCreator && allReady) {
+    if (!isBot && isCreator && allReady) {
       if (!promptedRef.current) {
         promptedRef.current = true;
         setShowStartModal(true);
@@ -254,11 +255,11 @@ export default function BoardSetup() {
       promptedRef.current = false;
       setShowStartModal(false);
     }
-  }, [isCreator, allReady, roomData?.currentGameIndex]);
+  }, [isBot, isCreator, allReady, roomData?.currentGameIndex]);
 
   return (
     <div className="board-setup-page">
-      {showStartModal && (
+      {!isBot && showStartModal && (
         <StartGameModal
           onStart={() => {
             setShowStartModal(false);
@@ -271,28 +272,40 @@ export default function BoardSetup() {
       )}
       {/* Header bar */}
       <div className="setup-header">
-        <div className="room-info-bar">
-          <span className="room-label">ROOM</span>
-          <span className="room-id-display">{roomData?.id}</span>
-          <button
-            className="copy-btn"
-            title="Copy Room ID"
-            aria-label="Copy Room ID"
-            onClick={handleCopyId}
-            type="button"
-          >
-            <CopyIcon size={14} />
-          </button>
-          <button
-            className="copy-btn share-btn"
-            title="Share Room"
-            aria-label="Share Room"
-            onClick={handleShare}
-            type="button"
-          >
-            <ShareIcon size={14} />
-          </button>
-        </div>
+        {isBot ? (
+          <div className="bot-match-badge">
+            <div className="bot-badge-icon">
+              <BotIcon size={18} />
+            </div>
+            <span className="bot-badge-text">vs BingoBot</span>
+            <span className={`diff-tag diff-${roomData?.difficulty || 'pro'}`}>
+              {(roomData?.difficulty || 'pro').toUpperCase()}
+            </span>
+          </div>
+        ) : (
+          <div className="room-info-bar">
+            <span className="room-label">ROOM</span>
+            <span className="room-id-display">{roomData?.id}</span>
+            <button
+              className="copy-btn"
+              title="Copy Room ID"
+              aria-label="Copy Room ID"
+              onClick={handleCopyId}
+              type="button"
+            >
+              <CopyIcon size={14} />
+            </button>
+            <button
+              className="copy-btn share-btn"
+              title="Share Room"
+              aria-label="Share Room"
+              onClick={handleShare}
+              type="button"
+            >
+              <ShareIcon size={14} />
+            </button>
+          </div>
+        )}
         <div className="game-num-badge">Round #{roomData?.currentGameIndex}</div>
         <div className="setup-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <SoundToggle />
@@ -306,7 +319,7 @@ export default function BoardSetup() {
             <LeaveIcon size={18} />
           </button>
         </div>
- </div>
+      </div>
 
  <div className="setup-main">
  {/* Board area */}
@@ -402,7 +415,7 @@ export default function BoardSetup() {
  type="button"
  >
  <CheckIcon size={18} />
- <span>Submit Board Ready</span>
+ <span>{isBot ? 'Start Match vs Bot' : 'Submit Board Ready'}</span>
  </button>
  </div>
  )}
@@ -410,6 +423,23 @@ export default function BoardSetup() {
 
  {/* Players sidebar */}
  <div className="players-sidebar">
+ {isBot ? (
+   <div className="bot-match-info-card">
+     <div className="bot-info-card-header">
+       <div className="bot-avatar-circle">
+         <BotIcon size={22} />
+       </div>
+       <div>
+         <h4>Single Player Match</h4>
+         <p className="bot-info-sub">vs BingoBot ({(roomData?.difficulty || 'pro').toUpperCase()})</p>
+       </div>
+     </div>
+     <p className="bot-info-tip">
+       Fill all 25 numbers on your board, then click <strong>Start Match vs Bot</strong>. The match starts instantly!
+     </p>
+   </div>
+ ) : (
+   <>
  <h3>Players in Room</h3>
  <div className="players-list">
  {players.map(p => (
@@ -470,6 +500,8 @@ export default function BoardSetup() {
  <ClockIcon size={14} />
  <span>Waiting for host to launch the match...</span>
  </div>
+ )}
+   </>
  )}
 
  {roomData?.gameHistory?.length > 0 && (() => {

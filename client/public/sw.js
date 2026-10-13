@@ -1,11 +1,13 @@
-const CACHE_NAME = 'bingo-pwa-v2.0.0';
+const CACHE_NAME = 'bingo-pwa-v2.1.0';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  '/sounds/bgm-game.mp3',
+  '/sounds/bgm-lobby%20and%20home.mp3'
 ];
 
 self.addEventListener('install', (event) => {
