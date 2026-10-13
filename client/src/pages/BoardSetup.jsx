@@ -41,18 +41,34 @@ export default function BoardSetup() {
  if (!roomData) navigate('/lobby');
  }, [roomData, navigate]);
 
+ const isBot = Boolean(roomData?.isBot);
  const gameIndex = roomData?.currentGameIndex ?? 0;
  const stableName = myPlayer?.name || playerName || '';
  const storageKey = roomData?.id ? `bingo_setup_${roomData.id}_${stableName}` : null;
  const legacyKey = roomData?.id && playerId ? `bingo_setup_${roomData.id}_${playerId}` : null;
- const isLocked = submitted || Boolean(myPlayer?.ready);
+
+ const usedNumbers = board.flat().filter(Boolean);
+ const totalFilled = usedNumbers.length;
+ const isBoardFull = totalFilled === 25;
+ // A board can ONLY be locked in multiplayer, when 25 numbers are filled and ready/submitted is true.
+ // In bot mode, board setup is always editable so user never gets locked out or stuck.
+ const isLocked = !isBot && (submitted || Boolean(myPlayer?.ready)) && isBoardFull;
 
  // 1) Restore or Reset
  useEffect(() => {
    if (!roomData?.id) return;
 
-   // A) If server already has our 5x5 board and we are ready, restore it immediately
-   if (myPlayer?.ready && Array.isArray(myPlayer.board) && myPlayer.board.length === 5 && myPlayer.board.flat().length === 25) {
+   // In bot mode, always start setup with fresh editable state
+   if (isBot) {
+     setSubmitted(false);
+     if (Array.isArray(myPlayer?.board) && myPlayer.board.length === 5 && myPlayer.board.flat().length === 25) {
+       setBoard(myPlayer.board);
+       return;
+     }
+   }
+
+   // A) Multiplayer: If server already has our 5x5 board and we are ready, restore it
+   if (!isBot && myPlayer?.ready && Array.isArray(myPlayer.board) && myPlayer.board.length === 5 && myPlayer.board.flat().length === 25) {
      setBoard(myPlayer.board);
      setSubmitted(true);
      return;
@@ -68,16 +84,19 @@ export default function BoardSetup() {
            setBoard(parsed.board);
          }
          if (parsed.autoSeq) setAutoSeq(parsed.autoSeq);
-         if (parsed.submitted || myPlayer?.ready) {
-           setSubmitted(true);
+         if (!isBot && (parsed.submitted || myPlayer?.ready)) {
+           const filled = parsed.board && Array.isArray(parsed.board) ? parsed.board.flat().filter(Boolean).length : 0;
+           if (filled === 25) {
+             setSubmitted(true);
+           }
          }
          return;
        }
      }
    } catch {}
 
-   // C) If server says ready, definitely mark submitted
-   if (myPlayer?.ready) {
+   // C) If server says ready in multiplayer and board is full, definitely mark submitted
+   if (!isBot && myPlayer?.ready && Array.isArray(myPlayer?.board) && myPlayer.board.flat().length === 25) {
      setSubmitted(true);
      return;
    }
@@ -92,28 +111,27 @@ export default function BoardSetup() {
    setSubmitted(false);
    setStartError('');
    // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [gameIndex, roomData?.id, stableName, myPlayer?.ready, myPlayer?.board]);
+ }, [gameIndex, roomData?.id, stableName, myPlayer?.ready, myPlayer?.board, isBot]);
 
  // 2) Save to localStorage
  useEffect(() => {
    if (!storageKey) return;
    const filledCount = board.flat().filter(Boolean).length;
    // Guard: Don't overwrite saved board with empty board if player is already ready
-   if (myPlayer?.ready && filledCount === 0) return;
+   if (!isBot && myPlayer?.ready && filledCount === 0) return;
+
+   // Never save submitted as true in bot mode, or if board is incomplete
+   const shouldSaveSubmitted = !isBot && (submitted || Boolean(myPlayer?.ready)) && filledCount === 25;
 
    try {
      localStorage.setItem(storageKey, JSON.stringify({
        gameIndex,
        board,
        autoSeq,
-       submitted: submitted || Boolean(myPlayer?.ready)
+       submitted: shouldSaveSubmitted
      }));
    } catch {}
- }, [storageKey, board, autoSeq, submitted, gameIndex, myPlayer?.ready]);
-
- const usedNumbers = board.flat().filter(Boolean);
- const totalFilled = usedNumbers.length;
- const isBoardFull = totalFilled === 25;
+ }, [storageKey, board, autoSeq, submitted, gameIndex, myPlayer?.ready, isBot]);
 
   function handleCellClick(r, c) {
     if (isLocked) return;
@@ -199,14 +217,14 @@ export default function BoardSetup() {
     }
     submitBoard(board, (res) => {
       if (res.success) {
-        setSubmitted(true);
+        if (!isBot) setSubmitted(true);
         if (storageKey) {
           try {
             localStorage.setItem(storageKey, JSON.stringify({
               gameIndex,
               board,
               autoSeq,
-              submitted: true
+              submitted: !isBot
             }));
           } catch {}
         }
@@ -240,7 +258,6 @@ export default function BoardSetup() {
     }
   };
 
-  const isBot = Boolean(roomData?.isBot);
   const players = roomData?.players || [];
   const readyCount = players.filter(p => p.ready).length;
   const allReady = players.length >= 2 && readyCount === players.length;

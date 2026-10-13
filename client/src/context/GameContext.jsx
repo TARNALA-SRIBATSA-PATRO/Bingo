@@ -62,9 +62,11 @@ export function GameProvider({ children }) {
 
       // Offline / Bot Match Session Restore
       if (session.isBot && session.roomData) {
-        // Reconstruct Sets for players
+        // Reconstruct Sets for players; ensure setup phase is never locked as ready
+        const isPlaying = session.roomData.status === 'playing';
         const restoredPlayers = (session.roomData.players || []).map(p => ({
           ...p,
+          ready: isPlaying ? Boolean(p.ready) : (p.id === 'bot-opponent' ? true : false),
           markedCells: new Set(p.markedCells || []),
           bingoLines: new Set(p.bingoLines || [])
         }));
@@ -77,7 +79,7 @@ export function GameProvider({ children }) {
         setRoomData(restoredRoom);
         botSecretBoardRef.current = session.botSecretBoard || null;
 
-        if (session.roomData.status === 'playing') {
+        if (isPlaying) {
           navigate('/game');
         } else {
           navigate('/board-setup');
@@ -233,8 +235,17 @@ export function GameProvider({ children }) {
       wins: 0
     };
 
+    // Clean up any stale bot setup keys from past sessions
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('bingo_setup_BOT')) localStorage.removeItem(k);
+      });
+    } catch {}
+
+    const botRoomId = `BOT-${difficulty.toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
     const newRoomData = {
-      id: `BOT-${difficulty.toUpperCase()}`,
+      id: botRoomId,
       isBot: true,
       difficulty,
       status: 'filling',
@@ -726,6 +737,21 @@ export function GameProvider({ children }) {
     clearTimeout(botInactivityWarningTimerRef.current);
     botSecretBoardRef.current = null;
     clearSession();
+
+    // Clean up room-specific setup cache and all bot match setup keys
+    try {
+      if (roomData?.id) {
+        const stableName = playerName || '';
+        localStorage.removeItem(`bingo_setup_${roomData.id}_${stableName}`);
+        localStorage.removeItem(`bingo_setup_${roomData.id}_${playerId}`);
+      }
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('bingo_setup_BOT')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch {}
+
     setRoomData(null);
     setPlayerId('');
     const persistent = getPersistentPlayerNameSync();
@@ -733,11 +759,14 @@ export function GameProvider({ children }) {
     setGameOver(null);
     setShowLeaveModal(false);
     setInactivityWarning(null);
-    navigate('/');
-  }, [navigate, socket, roomData?.isBot]);
+    navigate('/lobby');
+  }, [navigate, socket, roomData?.isBot, roomData?.id, playerName, playerId]);
 
   const transferCreator = useCallback((targetId, cb) => {
-    if (!socket || roomData?.isBot) return;
+    if (!socket || roomData?.isBot) {
+      if (cb) cb({ success: false, error: 'Cannot transfer privileges in a bot game.' });
+      return;
+    }
     socket.emit('room:transferCreator', { targetId }, (res) => {
       if (cb) cb(res);
     });

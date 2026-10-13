@@ -9,7 +9,10 @@ export default function LeaveModal({ onClose }) {
 
   if (!roomData) return null;
 
-  const otherPlayers = Object.values(roomData.players || {}).filter(p => p.id !== playerId);
+  const isBot = Boolean(roomData.isBot);
+  const otherPlayers = Object.values(roomData.players || {}).filter(
+    p => p.id !== playerId && !p.id.startsWith('bot') && p.id !== 'bot-opponent'
+  );
 
   const handleTransferAndLeave = () => {
     if (!selectedTarget) {
@@ -17,24 +20,45 @@ export default function LeaveModal({ onClose }) {
       return;
     }
     transferCreator(selectedTarget, (res) => {
-      if (res.success) {
+      if (res?.success) {
+        onClose?.();
         actualLeaveRoom(true);
       } else {
-        setError(res.error || 'Failed to transfer privileges.');
+        setError(res?.error || 'Failed to transfer privileges.');
       }
     });
   };
 
   const handleEndAndLeave = () => {
-    actualLeaveRoom(true); // pass true to indicate we know what we are doing
+    onClose?.();
+    actualLeaveRoom(true);
+  };
+
+  const handleDirectLeave = () => {
+    onClose?.();
+    actualLeaveRoom(true);
   };
 
   return (
     <div className="modal-overlay">
       <div className="modal-content leave-modal">
-        <h3>Leave Room</h3>
+        <h3>{isBot ? 'Exit Match' : 'Leave Room'}</h3>
         
-        {isCreator ? (
+        {isBot ? (
+          <div>
+            <p className="leave-modal-subtext">
+              Are you sure you want to exit your game against BingoBot? Your current round progress will be lost.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-danger" onClick={handleDirectLeave} type="button">
+                Exit Match
+              </button>
+              <button className="btn btn-ghost" onClick={onClose} type="button">
+                Stay in Game
+              </button>
+            </div>
+          </div>
+        ) : isCreator ? (
           <div className="creator-warning">
             <p className="warning-text">
               <strong>Warning:</strong> You are the room creator. If you leave now, the game will be over for everyone!
@@ -56,32 +80,32 @@ export default function LeaveModal({ onClose }) {
                 {error && <div className="modal-error">{error}</div>}
                 
                 <div className="modal-actions">
-                  <button className="btn btn-primary" onClick={handleTransferAndLeave}>
+                  <button className="btn btn-primary" onClick={handleTransferAndLeave} type="button">
                     Transfer & Leave
                   </button>
-                  <button className="btn btn-danger" onClick={handleEndAndLeave}>
+                  <button className="btn btn-danger" onClick={handleEndAndLeave} type="button">
                     End Game & Leave
                   </button>
                 </div>
               </div>
             ) : (
               <div className="modal-actions">
-                <button className="btn btn-danger" onClick={handleEndAndLeave}>
+                <button className="btn btn-danger" onClick={handleEndAndLeave} type="button">
                   End Game & Leave
                 </button>
               </div>
             )}
+            <button className="btn btn-ghost cancel-btn" onClick={onClose} type="button">Cancel</button>
           </div>
         ) : (
           <div>
             <p>Are you sure you want to leave the room?</p>
             <div className="modal-actions">
-              <button className="btn btn-danger" onClick={() => actualLeaveRoom(true)}>Yes, Leave</button>
+              <button className="btn btn-danger" onClick={handleDirectLeave} type="button">Yes, Leave</button>
+              <button className="btn btn-ghost" onClick={onClose} type="button">Cancel</button>
             </div>
           </div>
         )}
-        
-        <button className="btn btn-ghost cancel-btn" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
