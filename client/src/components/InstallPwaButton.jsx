@@ -75,6 +75,7 @@ const InstallPwaButton = () => {
       const choiceResult = await deferredPrompt.userChoice;
       if (choiceResult.outcome === 'accepted') {
         setIsInstalled(true);
+        window.dispatchEvent(new Event('appinstalled'));
       }
       setDeferredPrompt(null);
       savedDeferredPrompt = null;

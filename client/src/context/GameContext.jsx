@@ -1,6 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useSocket } from './SocketContext';
 import { useNavigate } from 'react-router-dom';
+import { 
+  getPersistentPlayerName, 
+  getPersistentPlayerNameSync, 
+  setPersistentPlayerName 
+} from '../utils/storageUtils';
 
 const GameContext = createContext(null);
 
@@ -21,7 +26,7 @@ export function GameProvider({ children }) {
   const { socket } = useSocket();
   const navigate = useNavigate();
 
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(() => getPersistentPlayerNameSync() || '');
   const [roomData, setRoomData] = useState(null);
   const [playerId, setPlayerId] = useState('');
   const [notification, setNotification] = useState(null);
@@ -35,6 +40,10 @@ export function GameProvider({ children }) {
     if (session) {
       setPlayerName(session.playerName || '');
       setPlayerId(session.playerId || '');
+    } else {
+      getPersistentPlayerName().then(saved => {
+        if (saved) setPlayerName(saved);
+      });
     }
   }, []);
 
@@ -110,11 +119,13 @@ export function GameProvider({ children }) {
 
   const createRoom = useCallback((name, cb) => {
     if (!socket) return;
-    socket.emit('room:create', { name }, (res) => {
+    const cleanName = (name || '').trim();
+    socket.emit('room:create', { name: cleanName }, (res) => {
       if (res.success) {
-        setPlayerName(name);
+        setPlayerName(cleanName);
+        setPersistentPlayerName(cleanName);
         setPlayerId(res.playerId);
-        saveSession({ playerName: name, playerId: res.playerId, roomId: res.roomId });
+        saveSession({ playerName: cleanName, playerId: res.playerId, roomId: res.roomId });
         navigate('/board-setup');
       }
       cb(res);
@@ -128,6 +139,7 @@ export function GameProvider({ children }) {
     socket.emit('room:join', { name: cleanName, roomId: cleanRoomId }, (res) => {
       if (res.success) {
         setPlayerName(cleanName);
+        setPersistentPlayerName(cleanName);
         setPlayerId(res.playerId);
         saveSession({ playerName: cleanName, playerId: res.playerId, roomId: cleanRoomId });
         navigate('/board-setup');
@@ -174,7 +186,8 @@ export function GameProvider({ children }) {
       clearSession();
       setRoomData(null);
       setPlayerId('');
-      setPlayerName('');
+      const persistent = getPersistentPlayerNameSync();
+      setPlayerName(persistent || '');
       setGameOver(null);
       navigate('/');
     };
@@ -201,7 +214,8 @@ export function GameProvider({ children }) {
     clearSession();
     setRoomData(null);
     setPlayerId('');
-    setPlayerName('');
+    const persistent = getPersistentPlayerNameSync();
+    setPlayerName(persistent || '');
     setGameOver(null);
     setShowLeaveModal(false);
     navigate('/');

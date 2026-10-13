@@ -1,21 +1,33 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
+import { 
+  getPersistentPlayerName, 
+  getPersistentPlayerNameSync, 
+  setPersistentPlayerName 
+} from '../utils/storageUtils';
 import SoundToggle from '../components/SoundToggle';
 import { ArrowLeftIcon, PlusIcon, KeyIcon } from '../components/Icons';
 import './Lobby.css';
 
 export default function Lobby() {
   const navigate = useNavigate();
-  const { createRoom, joinRoom } = useGame();
+  const { createRoom, joinRoom, playerName } = useGame();
 
   const [mode, setMode] = useState(null); // 'create' | 'join'
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => playerName || getPersistentPlayerNameSync() || '');
   const [roomId, setRoomId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Auto-fill from persistent storage if currently empty
+    if (!name) {
+      getPersistentPlayerName().then(saved => {
+        if (saved) setName(saved);
+      });
+    }
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get('room') || params.get('join');
     if (code) {
@@ -26,10 +38,12 @@ export default function Lobby() {
 
   function handleCreate(e) {
     e.preventDefault();
-    if (!name.trim()) return setError('Please enter your name');
+    const cleanName = name.trim();
+    if (!cleanName) return setError('Please enter your name');
+    setPersistentPlayerName(cleanName);
     setLoading(true);
     setError('');
-    createRoom(name.trim(), (res) => {
+    createRoom(cleanName, (res) => {
       setLoading(false);
       if (!res.success) setError(res.error);
     });
@@ -37,11 +51,13 @@ export default function Lobby() {
 
   function handleJoin(e) {
     e.preventDefault();
-    if (!name.trim()) return setError('Please enter your name');
+    const cleanName = name.trim();
+    if (!cleanName) return setError('Please enter your name');
     if (!roomId.trim()) return setError('Please enter a Room ID');
+    setPersistentPlayerName(cleanName);
     setLoading(true);
     setError('');
-    joinRoom(name.trim(), roomId.trim().toUpperCase(), (res) => {
+    joinRoom(cleanName, roomId.trim().toUpperCase(), (res) => {
       setLoading(false);
       if (!res.success) setError(res.error);
     });
