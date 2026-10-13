@@ -153,16 +153,45 @@
   justify-content: center;
 }
 
+.bot-board-container {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 320px;
+}
+
 .bot-board-grid {
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  max-width: 320px;
   background: rgba(10, 13, 24, 0.8);
   padding: 10px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+}
+
+.bot-board-lines-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.85));
+  z-index: 10;
+}
+
+.bot-board-lines-svg line {
+  stroke-dasharray: 400;
+  stroke-dashoffset: 400;
+  animation: draw-bot-line 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes draw-bot-line {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .bot-board-row {
@@ -199,6 +228,38 @@
   border-color: #f59e0b;
   color: #fff;
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+}
+
+.bot-cell.last-move-cell {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.75), inset 0 0 8px rgba(56, 189, 248, 0.3) !important;
+  animation: bot-last-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes bot-last-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6), inset 0 0 6px rgba(56, 189, 248, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.95), inset 0 0 10px rgba(56, 189, 248, 0.45);
+  }
+}
+
+.bot-cell-last-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.52rem;
+  font-weight: 900;
+  background: #0284c7;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  z-index: 2;
 }
 
 .bot-cell-mark-indicator {

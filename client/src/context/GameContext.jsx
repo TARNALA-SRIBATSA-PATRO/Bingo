@@ -501,34 +501,35 @@ export function GameProvider({ children }) {
         if (cb) cb({ success: false, error: 'Game not in progress' });
         return;
       }
-      if (roomData.calledNumbers.includes(number)) {
+      const num = parseInt(number, 10);
+      if (roomData.calledNumbers.includes(num)) {
         if (cb) cb({ success: false, error: 'Number already called' });
         return;
       }
-      if (number < 1 || number > 25) {
+      if (isNaN(num) || num < 1 || num > 25) {
         if (cb) cb({ success: false, error: 'Invalid number' });
         return;
       }
 
       const currentTurnPlayerId = roomData.turnOrder[roomData.currentTurnIndex];
-      const updatedCalled = [...roomData.calledNumbers, number];
-      const updatedHistory = [...roomData.calledHistory, { number, calledById: currentTurnPlayerId }];
+      const updatedCalled = [...roomData.calledNumbers, num];
+      const updatedHistory = [...roomData.calledHistory, { number: num, calledById: currentTurnPlayerId }];
 
       const userPlayer = roomData.players.find(p => p.id === (playerId || 'player-user'));
       const botPlayer = roomData.players.find(p => p.id === 'bot-opponent');
       const botBoard = botSecretBoardRef.current || botPlayer.secretBoard;
 
       // 1. Mark on user board
-      const newUserMarked = new Set(userPlayer.markedCells);
-      if (userPlayer.board.flat().includes(number)) {
-        newUserMarked.add(number);
+      const newUserMarked = new Set([...userPlayer.markedCells].map(Number));
+      if (userPlayer.board.flat().map(Number).includes(num)) {
+        newUserMarked.add(num);
       }
       const userCompletedLines = checkBingoLines(userPlayer.board, newUserMarked);
 
       // 2. Mark on bot board (fairly from bot's own secret board)
-      const newBotMarked = new Set(botPlayer.markedCells);
-      if (botBoard.flat().includes(number)) {
-        newBotMarked.add(number);
+      const newBotMarked = new Set([...botPlayer.markedCells].map(Number));
+      if (botBoard.flat().map(Number).includes(num)) {
+        newBotMarked.add(num);
       }
       const botCompletedLines = checkBingoLines(botBoard, newBotMarked);
 
@@ -590,7 +591,11 @@ export function GameProvider({ children }) {
         setGameOver({
           winners,
           gameHistory: nextGameHistory,
-          botBoard
+          botBoard,
+          botMarkedCells: Array.from(newBotMarked),
+          botBingoLines: botCompletedLines,
+          lastCalledNumber: num,
+          calledNumbers: updatedCalled
         });
 
         if (cb) cb({ success: true });

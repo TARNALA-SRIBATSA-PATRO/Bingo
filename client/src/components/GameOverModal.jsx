@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useGame } from '../context/GameContext';
 import { TrophyIcon, SparklesIcon, RefreshIcon, LogOutIcon, CrownIcon, EyeIcon } from './Icons';
+import { checkBingoLines } from '../utils/botEngine';
 import BotBoardModal from './BotBoardModal';
 import './GameOverModal.css';
 
@@ -13,8 +14,35 @@ export default function GameOverModal() {
   const isBot = Boolean(roomData?.isBot);
   const botPlayer = roomData?.players?.find(p => p.id === 'bot-opponent');
   const botBoard = gameOver.botBoard || botPlayer?.board || [];
-  const botMarkedCells = botPlayer?.markedCells ? [...botPlayer.markedCells] : [];
-  const botBingoLines = botPlayer?.bingoLines ? [...botPlayer.bingoLines] : [];
+
+  const allCalled = gameOver.calledNumbers || roomData?.calledNumbers || [];
+  const lastMove = gameOver.lastCalledNumber ?? (allCalled.length > 0 ? allCalled[allCalled.length - 1] : null);
+
+  const botMarkedCells = useMemo(() => {
+    const set = new Set();
+    if (gameOver.botMarkedCells) {
+      gameOver.botMarkedCells.forEach(n => set.add(Number(n)));
+    }
+    if (botPlayer?.markedCells) {
+      botPlayer.markedCells.forEach(n => set.add(Number(n)));
+    }
+    if (allCalled) {
+      allCalled.forEach(n => set.add(Number(n)));
+    }
+    if (lastMove !== null && lastMove !== undefined) {
+      set.add(Number(lastMove));
+    }
+    return Array.from(set);
+  }, [gameOver.botMarkedCells, botPlayer?.markedCells, allCalled, lastMove]);
+
+  const botBingoLines = useMemo(() => {
+    if (gameOver.botBingoLines && Array.isArray(gameOver.botBingoLines) && gameOver.botBingoLines.length > 0) {
+      const recalc = checkBingoLines(botBoard, new Set(botMarkedCells));
+      return Array.from(new Set([...gameOver.botBingoLines, ...recalc]));
+    }
+    if (!botBoard || botBoard.length !== 5) return [];
+    return checkBingoLines(botBoard, new Set(botMarkedCells));
+  }, [gameOver.botBingoLines, botBoard, botMarkedCells]);
 
   const winners = gameOver.winners || [];
   const amIWinner = winners.some(w => w.id === playerId);
@@ -147,6 +175,7 @@ export default function GameOverModal() {
           board={botBoard}
           markedCells={botMarkedCells}
           bingoLines={botBingoLines}
+          lastMove={lastMove}
           difficulty={roomData?.difficulty || 'pro'}
           onClose={() => setShowBotBoard(false)}
         />
