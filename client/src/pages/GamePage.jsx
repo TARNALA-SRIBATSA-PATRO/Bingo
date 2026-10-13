@@ -475,20 +475,25 @@ export default function GamePage() {
  style={isCurrentTurn ? { borderColor: color?.border, boxShadow: `0 0 12px ${color?.border}44` } : {}}
  >
  <div className="opc-header">
- <span className="opc-name" style={{ color: color?.text }}>
+ <div className="opc-identity">
+ <div className="opc-name" style={{ color: color?.text }}>
  {isBot && <BotIcon size={15} style={{ marginRight: 5, verticalAlign: 'middle' }} />}
  <span>{p.name}</span>
- {isBot ? (
- <span className={`diff-tag diff-${roomData.difficulty || 'pro'}`} style={{ marginLeft: 6 }}>
- {(roomData.difficulty || 'pro').toUpperCase()}
- </span>
- ) : p.id === roomData.creatorId ? (
+ {!isBot && p.id === roomData.creatorId && (
  <span className="creator-badge" title="Room Host">
  <CrownIcon size={12} />
  </span>
- ) : null}
+ )}
  {isCurrentTurn && <span className="opc-turn-pill">Turn</span>}
+ </div>
+ {isBot && (
+ <div className="opc-subline">
+ <span className={`diff-tag diff-${roomData.difficulty || 'pro'}`}>
+ {(roomData.difficulty || 'pro').toUpperCase()}
  </span>
+ </div>
+ )}
+ </div>
  <div className="opc-bingo-mini">
  {BINGO_LETTERS.map((l, i) => (
  <span
