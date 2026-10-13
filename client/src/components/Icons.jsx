@@ -195,6 +195,8 @@ export function LogOutIcon({ size = 18, className = '' }) {
   );
 }
 
+export { LogOutIcon as LeaveIcon };
+
 export function ShareIcon({ size = 16, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -222,5 +224,22 @@ export function ZapIcon({ size = 18, className = '' }) {
     </svg>
   );
 }
+
+export function TriangleDownIcon({ size = 12, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <polygon points="5 9 19 9 12 16" />
+    </svg>
+  );
+}
+
+export function TriangleUpIcon({ size = 12, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <polygon points="5 15 19 15 12 8" />
+    </svg>
+  );
+}
+
 
 

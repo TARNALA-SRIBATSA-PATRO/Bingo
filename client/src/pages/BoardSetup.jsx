@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import SoundToggle from '../components/SoundToggle';
-import { CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon, PlayIcon, TrophyIcon } from '../components/Icons';
+import StartGameModal from '../components/StartGameModal';
+import { CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon, PlayIcon, TrophyIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon } from '../components/Icons';
 import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './BoardSetup.css';
 
@@ -30,6 +31,10 @@ export default function BoardSetup() {
  const [inputError, setInputError] = useState('');
  const [submitted, setSubmitted] = useState(false);
  const [startError, setStartError] = useState('');
+ const [historyExpanded, setHistoryExpanded] = useState(false);
+ const [showStartModal, setShowStartModal] = useState(false);
+ const promptedRef = useRef(false);
+ const MAX_HISTORY_ROWS = 3;
 
  // Redirect if no room
  useEffect(() => {
@@ -239,37 +244,68 @@ export default function BoardSetup() {
   const readyCount = players.filter(p => p.ready).length;
   const allReady = players.length >= 2 && readyCount === players.length;
 
+  useEffect(() => {
+    if (isCreator && allReady) {
+      if (!promptedRef.current) {
+        promptedRef.current = true;
+        setShowStartModal(true);
+      }
+    } else {
+      promptedRef.current = false;
+      setShowStartModal(false);
+    }
+  }, [isCreator, allReady, roomData?.currentGameIndex]);
+
   return (
     <div className="board-setup-page">
+      {showStartModal && (
+        <StartGameModal
+          onStart={() => {
+            setShowStartModal(false);
+            handleStartGame();
+          }}
+          onNotNow={() => setShowStartModal(false)}
+          playerCount={players.length}
+          roundIndex={roomData?.currentGameIndex || 1}
+        />
+      )}
       {/* Header bar */}
       <div className="setup-header">
         <div className="room-info-bar">
-          <span className="room-label">Room</span>
+          <span className="room-label">ROOM</span>
           <span className="room-id-display">{roomData?.id}</span>
           <button
             className="copy-btn"
             title="Copy Room ID"
+            aria-label="Copy Room ID"
             onClick={handleCopyId}
             type="button"
           >
-            <CopyIcon size={13} />
-            <span>Copy</span>
+            <CopyIcon size={14} />
           </button>
           <button
             className="copy-btn share-btn"
             title="Share Room"
+            aria-label="Share Room"
             onClick={handleShare}
             type="button"
           >
-            <ShareIcon size={13} />
-            <span>Share</span>
+            <ShareIcon size={14} />
           </button>
         </div>
- <div className="game-num-badge">Round #{roomData?.currentGameIndex}</div>
- <div className="setup-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
- <SoundToggle />
- <button className="btn btn-ghost leave-btn" onClick={leaveRoom} type="button">Leave</button>
- </div>
+        <div className="game-num-badge">Round #{roomData?.currentGameIndex}</div>
+        <div className="setup-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <SoundToggle />
+          <button
+            className="btn btn-ghost leave-btn"
+            onClick={leaveRoom}
+            type="button"
+            title="Leave Room"
+            aria-label="Leave Room"
+          >
+            <LeaveIcon size={18} />
+          </button>
+        </div>
  </div>
 
  <div className="setup-main">
@@ -431,18 +467,41 @@ export default function BoardSetup() {
  </div>
  )}
 
- {roomData?.gameHistory?.length > 0 && (
+ {roomData?.gameHistory?.length > 0 && (() => {
+ const historyList = roomData.gameHistory;
+ const shouldTruncate = historyList.length > MAX_HISTORY_ROWS;
+ const visibleHistory = shouldTruncate && !historyExpanded
+ ? historyList.slice(0, MAX_HISTORY_ROWS)
+ : historyList;
+
+ return (
  <div className="game-history-mini">
- <h4>Previous Games</h4>
- {roomData.gameHistory.map(g => (
+ <h4>Game History</h4>
+ {visibleHistory.map(g => (
  <div key={g.gameIndex} className="history-row">
- <span className="history-game">Game {g.gameIndex}</span>
+ <span className="history-game">Round #{g.gameIndex}</span>
  <span className="history-winner">
  <TrophyIcon size={12} className="trophy-gold" />
  <span>{g.winners.map(w => w.name).join(', ')}</span>
  </span>
  </div>
  ))}
+
+ {shouldTruncate && (
+ <button
+ type="button"
+ className="history-toggle-row"
+ onClick={() => setHistoryExpanded(prev => !prev)}
+ aria-expanded={historyExpanded}
+ >
+ <span>{historyExpanded ? 'Collapse' : `Show all (${historyList.length})`}</span>
+ {historyExpanded ? (
+ <TriangleUpIcon size={11} className="triangle-icon" />
+ ) : (
+ <TriangleDownIcon size={11} className="triangle-icon" />
+ )}
+ </button>
+ )}
  
  <h4 style={{ marginTop: '15px' }}>All-Time Wins</h4>
  <div className="leaderboard-list">
@@ -462,7 +521,8 @@ export default function BoardSetup() {
   ))}
  </div>
  </div>
- )}
+ );
+ })()}
  </div>
  </div>
  </div>

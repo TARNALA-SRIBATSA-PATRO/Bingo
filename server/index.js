@@ -38,6 +38,37 @@ function generateRoomId() {
   return id;
 }
 
+// Fisher-Yates array shuffle for fair randomized turn order
+function shuffleArray(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Find the winner from the last game in the room (if they are still active in the room)
+function getLastWinnerPlayer(room) {
+  if (!room.gameHistory || room.gameHistory.length === 0) return null;
+  const lastGame = room.gameHistory[room.gameHistory.length - 1];
+  if (!lastGame || !Array.isArray(lastGame.winners) || lastGame.winners.length === 0) return null;
+
+  const validWinners = [];
+  for (const w of lastGame.winners) {
+    if (w.id && room.players[w.id]) {
+      validWinners.push(room.players[w.id]);
+    } else if (w.name) {
+      const found = Object.values(room.players).find(p => p.name === w.name);
+      if (found) validWinners.push(found);
+    }
+  }
+
+  if (validWinners.length === 0) return null;
+  // If multiple tied winners, pick randomly among the tied winners
+  return validWinners[Math.floor(Math.random() * validWinners.length)];
+}
+
 // Build room data personalized for a specific socket (hides other players' board numbers)
 function getRoomDataFor(room, forSocketId) {
   const players = Object.values(room.players).map(p => ({
@@ -256,7 +287,21 @@ io.on('connection', (socket) => {
     if (!players.every(p => p.ready)) return cb({ success: false, error: 'All players must be ready' });
 
     room.status = 'playing';
-    room.turnOrder = Object.keys(room.players);
+
+    // Determine turn order:
+    // If multiple rounds are played in the same room, the last winner gets the first turn.
+    // In the first round (or if the previous winner is no longer in the room),
+    // use a fair randomized shuffle algorithm so the creator does not always start first.
+    const playerIds = Object.keys(room.players);
+    const lastWinner = getLastWinnerPlayer(room);
+
+    if (lastWinner && room.players[lastWinner.id]) {
+      const otherPlayers = shuffleArray(playerIds.filter(id => id !== lastWinner.id));
+      room.turnOrder = [lastWinner.id, ...otherPlayers];
+    } else {
+      room.turnOrder = shuffleArray(playerIds);
+    }
+
     room.currentTurnIndex = 0;
     room.calledNumbers = [];
 

@@ -18,37 +18,87 @@
 }
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; flex: 1; }
 .topbar-right { justify-content: flex-end; }
-.topbar-center { display: flex; justify-content: center; flex: 1; }
+.topbar-center { display: flex; align-items: center; justify-content: center; gap: 12px; flex: 1; }
 
 .room-id-chip {
-  display: flex; align-items: center; gap: 10px;
-  background: rgba(0,0,0,0.2); border: 1px solid var(--border);
-  border-radius: 24px; padding: 6px 16px;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 20, 32, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  gap: 0;
 }
-.chip-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
-.chip-value { font-size: 1rem; font-weight: 900; color: var(--accent); letter-spacing: 0.15em; font-family: monospace; }
+.chip-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4f6b94;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-right: 8px;
+  user-select: none;
+}
+.chip-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #3b82f6;
+  letter-spacing: 0.14em;
+  font-family: inherit;
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+  margin-right: 12px;
+}
 .copy-mini-btn {
-  background: none; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-muted); padding: 4px;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #64748b;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+  flex-shrink: 0;
 }
-.copy-mini-btn:hover { color: var(--text-primary); }
+.copy-mini-btn:hover {
+  color: #cbd5e1;
+  transform: scale(1.12);
+}
+.copy-mini-btn:active {
+  transform: scale(0.95);
+}
+.copy-mini-btn + .copy-mini-btn {
+  margin-left: 6px;
+}
 
 .game-index-chip {
-  font-size: 0.85rem; color: var(--text-primary); font-weight: 500;
+  font-size: 0.85rem; color: var(--text-primary); font-weight: 600;
   background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(168, 85, 247, 0.2)); 
   border: 1px solid rgba(236, 72, 153, 0.3);
   padding: 6px 14px; border-radius: 20px;
   box-shadow: 0 2px 10px rgba(236, 72, 153, 0.1);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .turn-chip {
-  padding: 10px 24px; border-radius: 24px;
-  font-weight: 800; font-size: 1rem;
+  padding: 8px 20px; border-radius: 24px;
+  font-weight: 800; font-size: 0.95rem;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-secondary);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: var(--shadow);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 .turn-chip.my-turn {
   background: linear-gradient(135deg, var(--accent), #4f46e5);
@@ -57,6 +107,9 @@
   box-shadow: 0 4px 14px rgba(94, 106, 210, 0.4);
   text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
+
+.turn-label-desktop { display: inline; }
+.turn-label-mobile { display: none; }
 
 /* Main layout */
 .game-main {
@@ -432,48 +485,57 @@
   .game-topbar {
     flex-wrap: wrap;
     padding: 10px 14px;
-    gap: 8px 10px;
+    gap: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+    overflow-x: visible;
   }
   .topbar-left {
+    order: 1;
     flex: 1 1 auto;
     gap: 8px;
     min-width: 0;
   }
   .topbar-right {
+    order: 2;
     flex: 0 0 auto;
+    gap: 8px;
+    justify-content: flex-end;
   }
   .topbar-center {
     order: 3;
     flex: 0 0 100%;
     width: 100%;
+    display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 10px;
     margin-top: 2px;
   }
   .turn-chip {
-    padding: 7px 18px;
-    font-size: 0.92rem;
-    width: 100%;
-    max-width: 320px;
-    text-align: center;
-  }
-  .room-id-chip {
-    padding: 5px 10px;
-    gap: 6px;
-  }
-  .chip-label {
-    font-size: 0.68rem;
-  }
-  .chip-value {
+    padding: 7px 16px;
     font-size: 0.88rem;
-    letter-spacing: 0.1em;
-  }
-  .copy-mini-btn {
-    font-size: 0.75rem;
-    padding: 2px 4px;
+    gap: 6px;
+    max-width: none;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
   }
   .game-index-chip {
-    padding: 5px 10px;
-    font-size: 0.78rem;
+    padding: 6px 12px;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .turn-label-desktop {
+    display: inline;
+  }
+  .turn-label-mobile {
+    display: none;
+  }
+  .leave-btn {
+    width: 36px;
+    height: 36px;
   }
 }
 
@@ -482,32 +544,44 @@
     padding: 8px 10px;
     gap: 6px 8px;
   }
+  .topbar-left {
+    gap: 6px;
+  }
+  .topbar-right {
+    gap: 6px;
+  }
+  .topbar-center {
+    gap: 8px;
+    margin-top: 2px;
+  }
   .room-id-chip {
-    padding: 4px 8px;
-    gap: 5px;
+    padding: 5px 12px;
   }
   .chip-label {
-    font-size: 0.65rem;
+    display: inline-block;
+    font-size: 0.7rem;
+    margin-right: 6px;
   }
   .chip-value {
-    font-size: 0.82rem;
+    font-size: 0.95rem;
+    margin-right: 10px;
   }
   .copy-mini-btn {
-    font-size: 0.72rem;
+    font-size: 0.85rem;
+    padding: 3px;
   }
   .game-index-chip {
-    padding: 4px 8px;
-    font-size: 0.74rem;
+    padding: 5px 10px;
+    font-size: 0.76rem;
   }
   .turn-chip {
-    padding: 6px 14px;
-    font-size: 0.85rem;
-    max-width: 280px;
+    padding: 6px 13px;
+    font-size: 0.82rem;
+    gap: 5px;
   }
-  .topbar-right .btn-sm {
-    padding: 5px 10px;
-    font-size: 0.8rem;
-  }
+  .leave-btn {
+    width: 34px;
+    height: 34px;
   .game-main {
     padding: 12px 10px;
     gap: 16px;
@@ -527,5 +601,18 @@
     height: 38px;
     font-size: 1.15rem;
     border-radius: 10px;
+  }
+}
+
+@media (max-width: 380px) {
+  .turn-chip {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+  .turn-label-desktop {
+    display: none;
+  }
+  .turn-label-mobile {
+    display: inline;
   }
 }

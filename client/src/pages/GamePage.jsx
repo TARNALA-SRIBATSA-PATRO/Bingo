@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { buildPlayerColorMap } from '../utils/playerColors';
 import SoundToggle from '../components/SoundToggle';
-import { CopyIcon, ShareIcon, CrownIcon, TrophyIcon, CrosshairIcon, CheckIcon } from '../components/Icons';
+import { CopyIcon, ShareIcon, CrownIcon, TrophyIcon, CrosshairIcon, CheckIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon } from '../components/Icons';
 import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './GamePage.css';
 
@@ -74,7 +74,9 @@ export default function GamePage() {
  const [lastCalled, setLastCalled] = useState(null);
  const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
  const [lineCoords, setLineCoords] = useState({});
+ const [historyExpanded, setHistoryExpanded] = useState(false);
  const boardRef = useRef(null);
+ const MAX_HISTORY_ROWS = 3;
 
  useEffect(() => { if (!roomData) navigate('/lobby'); }, [roomData, navigate]);
 
@@ -214,37 +216,40 @@ export default function GamePage() {
  <div className="game-topbar">
  <div className="topbar-left">
  <div className="room-id-chip">
- <span className="chip-label">Room</span>
+ <span className="chip-label">ROOM</span>
  <span className="chip-value">{roomData.id}</span>
  <button
  className="copy-mini-btn"
  onClick={handleCopyId}
  title="Copy Room ID"
+ aria-label="Copy Room ID"
  type="button"
  >
- <CopyIcon size={12} />
+ <CopyIcon size={14} />
  </button>
  <button
  className="copy-mini-btn"
  onClick={handleShare}
  title="Share Room"
+ aria-label="Share Room"
  type="button"
  >
- <ShareIcon size={12} />
+ <ShareIcon size={14} />
  </button>
  </div>
- <div className="game-index-chip">Round #{roomData.currentGameIndex}</div>
  </div>
 
  <div className="topbar-center">
+ <div className="game-index-chip">Round #{roomData.currentGameIndex}</div>
  <div
  className={`turn-chip ${isMyTurn ? 'my-turn' : ''}`}
  style={isMyTurn ? {} : { borderColor: playerColorMap[currentTurnId]?.border, color: playerColorMap[currentTurnId]?.text }}
  >
  {isMyTurn ? (
  <>
- <CrosshairIcon size={16} />
- <span>Your Turn — Select a Number</span>
+ <CrosshairIcon size={15} />
+ <span className="turn-label-desktop">Your Turn — Select a Number</span>
+ <span className="turn-label-mobile">Your Turn</span>
  </>
  ) : (
  <span>{currentTurnPlayer?.name || '...'}'s Turn</span>
@@ -254,7 +259,15 @@ export default function GamePage() {
 
  <div className="topbar-right">
  <SoundToggle />
- <button className="btn btn-ghost btn-sm" onClick={leaveRoom} type="button">Leave</button>
+ <button
+ className="btn btn-ghost leave-btn"
+ onClick={leaveRoom}
+ type="button"
+ title="Leave Room"
+ aria-label="Leave Room"
+ >
+ <LeaveIcon size={18} />
+ </button>
  </div>
  </div>
 
@@ -450,10 +463,17 @@ export default function GamePage() {
  </div>
 
  {/* Game history */}
- {roomData.gameHistory?.length > 0 && (
+ {roomData.gameHistory?.length > 0 && (() => {
+ const historyList = roomData.gameHistory;
+ const shouldTruncate = historyList.length > MAX_HISTORY_ROWS;
+ const visibleHistory = shouldTruncate && !historyExpanded
+ ? historyList.slice(0, MAX_HISTORY_ROWS)
+ : historyList;
+
+ return (
  <div className="game-history-panel">
  <h3>Game History</h3>
- {roomData.gameHistory.map(g => (
+ {visibleHistory.map(g => (
  <div key={g.gameIndex} className="gh-row">
  <span className="gh-game">Round #{g.gameIndex}</span>
  <span className="gh-winner">
@@ -462,6 +482,22 @@ export default function GamePage() {
  </span>
  </div>
  ))}
+
+ {shouldTruncate && (
+ <button
+ type="button"
+ className="history-toggle-row"
+ onClick={() => setHistoryExpanded(prev => !prev)}
+ aria-expanded={historyExpanded}
+ >
+ <span>{historyExpanded ? 'Collapse' : `Show all (${historyList.length})`}</span>
+ {historyExpanded ? (
+ <TriangleUpIcon size={11} className="triangle-icon" />
+ ) : (
+ <TriangleDownIcon size={11} className="triangle-icon" />
+ )}
+ </button>
+ )}
  
  <h3 style={{ marginTop: '16px' }}>All-Time Wins</h3>
  <div className="leaderboard-list">
@@ -481,7 +517,8 @@ export default function GamePage() {
  ))}
  </div>
  </div>
- )}
+ );
+ })()}
       </div>
     </div>
   </div>

@@ -57,7 +57,7 @@ export async function triggerShare({ roomId, showNotif, onFallbackModal }) {
     try {
       const shareData = {
         title: 'Join my BINGO Game!',
-        text: `${shareText}\n${shareUrl}`,
+        text: shareText,
         url: shareUrl,
       };
 

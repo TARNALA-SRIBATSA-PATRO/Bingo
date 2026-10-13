@@ -16,24 +16,68 @@
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 .room-info-bar {
-  display: flex; align-items: center; gap: 12px;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 20, 32, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  gap: 0;
 }
-.room-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.room-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4f6b94;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-right: 8px;
+  user-select: none;
+}
 .room-id-display {
-  font-size: 1.25rem; font-weight: 900; color: var(--accent);
-  letter-spacing: 0.15em; font-family: 'Courier New', monospace;
-  text-shadow: 0 2px 10px rgba(94, 106, 210, 0.4);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #3b82f6;
+  letter-spacing: 0.14em;
+  font-family: inherit;
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+  margin-right: 12px;
 }
 .copy-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px;
-  padding: 6px 10px; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary);
-  transition: all 0.2s;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  padding: 3px;
+  cursor: pointer;
+  color: #64748b;
+  transition: color 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+  flex-shrink: 0;
 }
-.copy-btn:hover { border-color: var(--accent); color: var(--text-primary); background: rgba(94, 106, 210, 0.2); }
-.share-btn:hover { border-color: var(--cyan); color: #fff; background: rgba(6, 182, 212, 0.2); }
+.copy-btn:hover {
+  border-color: transparent;
+  color: #cbd5e1;
+  background: transparent;
+  transform: scale(1.12);
+}
+.copy-btn:active {
+  transform: scale(0.95);
+}
+.copy-btn.share-btn {
+  margin-left: 6px;
+}
+.copy-btn.share-btn:hover {
+  border-color: transparent;
+  color: #cbd5e1;
+  background: transparent;
+  transform: scale(1.12);
+}
 
 .game-num-badge {
   background: linear-gradient(135deg, rgba(94, 106, 210, 0.2), rgba(6, 182, 212, 0.2)); 
@@ -270,28 +314,73 @@
 /* Responsive */
 @media (max-width: 768px) {
   .setup-header {
-    padding: 10px 14px;
-    gap: 8px;
     flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+    overflow-x: visible;
   }
   .room-info-bar {
-    gap: 8px;
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
   }
-  .room-id-display {
-    font-size: 1.05rem;
+  .setup-header-actions {
+    order: 2;
+    flex: 0 0 auto;
+    gap: 8px !important;
   }
   .game-num-badge {
-    padding: 4px 10px;
-    font-size: 0.78rem;
+    order: 3;
+    width: 100%;
+    margin-top: 2px;
+    display: flex;
+    justify-content: center;
+    align-self: center;
+    padding: 5px 12px;
+    font-size: 0.8rem;
   }
   .leave-btn {
-    padding: 6px 10px;
-    font-size: 0.82rem;
+    width: 36px;
+    height: 36px;
   }
   .setup-main { grid-template-columns: 1fr; }
   .players-sidebar { position: static; }
   .board-cell { font-size: 1rem; }
 }
+
+@media (max-width: 480px) {
+  .setup-header {
+    padding: 8px 10px;
+    gap: 6px 8px;
+  }
+  .room-info-bar {
+    padding: 5px 12px;
+  }
+  .room-label {
+    display: inline-block;
+    font-size: 0.7rem;
+    margin-right: 6px;
+  }
+  .room-id-display {
+    font-size: 0.95rem;
+    margin-right: 10px;
+  }
+  .copy-btn {
+    padding: 3px;
+    font-size: 0.85rem;
+  }
+  .game-num-badge {
+    padding: 4px 10px;
+    font-size: 0.76rem;
+  }
+  .leave-btn {
+    width: 34px;
+    height: 34px;
+  }
+}
+
 @media (max-width: 380px) {
   .board-cell { font-size: 0.9rem; }
 }

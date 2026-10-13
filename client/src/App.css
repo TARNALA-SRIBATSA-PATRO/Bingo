@@ -129,6 +129,38 @@ h4 { font-size: 1rem; font-weight: 600; }
 }
 .btn-ghost:hover { color: var(--text-primary); background: rgba(255,255,255,0.08); }
 
+.leave-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  color: var(--text-secondary);
+  background: rgba(18, 22, 36, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.leave-btn:hover {
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+  background: rgba(239, 68, 68, 0.15) !important;
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.leave-btn:active {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
 .btn-accent {
   background: rgba(94, 106, 210, 0.18); color: #a5b4fc;
   border-color: rgba(94, 106, 210, 0.4);
@@ -274,4 +306,47 @@ input::placeholder { color: var(--text-muted); }
   position: fixed; inset: 0; background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center; z-index: 1000;
   backdrop-filter: blur(4px);
+}
+
+/* ===================== GAME HISTORY TOGGLE ===================== */
+.history-toggle-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.history-toggle-row:hover {
+  background: rgba(6, 182, 212, 0.12);
+  border-color: rgba(6, 182, 212, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.history-toggle-row:active {
+  transform: translateY(0);
+}
+
+.history-toggle-row .triangle-icon {
+  color: var(--cyan);
+  transition: transform 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.history-toggle-row:hover .triangle-icon {
+  color: #fff;
 }
