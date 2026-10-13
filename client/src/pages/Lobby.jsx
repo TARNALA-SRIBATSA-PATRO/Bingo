@@ -130,9 +130,13 @@ export default function Lobby() {
                     type="text"
                     placeholder="e.g. ABCD12"
                     value={roomId}
-                    onChange={e => setRoomId(e.target.value.toUpperCase())}
+                    onChange={e => setRoomId(e.target.value.replace(/\s+/g, '').toUpperCase())}
                     maxLength={6}
                     className="room-code-input"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
                   />
                 </div>
               )}

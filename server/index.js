@@ -171,9 +171,9 @@ io.on('connection', (socket) => {
 
   // Create room
   socket.on('room:create', ({ name }, cb) => {
-    name = name.trim();
-    let roomId = generateRoomId();
-    while (rooms[roomId]) roomId = generateRoomId();
+    name = (name || '').trim();
+    let roomId = generateRoomId().toUpperCase();
+    while (rooms[roomId]) roomId = generateRoomId().toUpperCase();
 
     const player = {
       id: socket.id,
@@ -209,7 +209,8 @@ io.on('connection', (socket) => {
 
   // Join room
   socket.on('room:join', ({ name, roomId }, cb) => {
-    name = name.trim();
+    name = (name || '').trim();
+    roomId = (roomId || '').trim().toUpperCase();
     const room = rooms[roomId];
     if (!room) return cb({ success: false, error: 'Room not found' });
     if (room.status === 'playing') return cb({ success: false, error: 'Game already in progress' });
@@ -460,6 +461,8 @@ io.on('connection', (socket) => {
 
   // Auto-rejoin
   socket.on('room:rejoin', ({ name, roomId, oldPlayerId }, cb) => {
+    name = (name || '').trim();
+    roomId = (roomId || '').trim().toUpperCase();
     const room = rooms[roomId];
     if (!room) return cb({ success: false, error: 'Room not found' });
     

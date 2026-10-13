@@ -43,14 +43,15 @@ export function GameProvider({ children }) {
     if (!socket) return;
     const session = loadSession();
     if (session && session.roomId && session.playerName && session.playerId) {
+      const cleanRoomId = session.roomId.trim().toUpperCase();
       socket.emit('room:rejoin', {
-        name: session.playerName,
-        roomId: session.roomId,
+        name: session.playerName.trim(),
+        roomId: cleanRoomId,
         oldPlayerId: session.playerId
       }, (res) => {
         if (res.success) {
           setPlayerId(res.playerId);
-          saveSession({ ...session, playerId: res.playerId });
+          saveSession({ ...session, roomId: cleanRoomId, playerId: res.playerId });
           if (res.status === 'playing') {
             navigate('/game');
           } else {
@@ -122,11 +123,13 @@ export function GameProvider({ children }) {
 
   const joinRoom = useCallback((name, roomId, cb) => {
     if (!socket) return;
-    socket.emit('room:join', { name, roomId }, (res) => {
+    const cleanRoomId = (roomId || '').trim().toUpperCase();
+    const cleanName = (name || '').trim();
+    socket.emit('room:join', { name: cleanName, roomId: cleanRoomId }, (res) => {
       if (res.success) {
-        setPlayerName(name);
+        setPlayerName(cleanName);
         setPlayerId(res.playerId);
-        saveSession({ playerName: name, playerId: res.playerId, roomId });
+        saveSession({ playerName: cleanName, playerId: res.playerId, roomId: cleanRoomId });
         navigate('/board-setup');
       }
       cb(res);
