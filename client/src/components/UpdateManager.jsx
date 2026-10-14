@@ -128,11 +128,14 @@ export default function UpdateManager() {
     }
   }, [isSafeToUpdate, location.pathname, executeApplyUpdate]);
 
-  // Periodic and lifecycle update checks
+  // Periodic and lifecycle update checks with jitter to prevent server load spikes
   useEffect(() => {
     checkForUpdates();
 
-    const interval = setInterval(checkForUpdates, 30000);
+    // Check every 60s (+/- 12s jitter) in lobby/home, throttled to 180s during gameplay
+    const baseInterval = isPlayingOrInRoom ? 180000 : 60000;
+    const jitter = Math.floor(Math.random() * 24000) - 12000;
+    const interval = setInterval(checkForUpdates, baseInterval + jitter);
 
     const handleOnline = () => checkForUpdates();
     const handleVisibility = () => {
@@ -159,7 +162,7 @@ export default function UpdateManager() {
       document.removeEventListener('visibilitychange', handleVisibility);
       navigator.serviceWorker?.removeEventListener('message', handleMessage);
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, isPlayingOrInRoom]);
 
   if (!updatingVersion) return null;
 

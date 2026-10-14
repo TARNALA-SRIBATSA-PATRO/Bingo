@@ -83,12 +83,13 @@ if ('serviceWorker' in navigator) {
 
         monitorUpdates(reg);
 
-        // Periodic background update check every 30 seconds
+        // Periodic background update check every 60 seconds with jitter
+        const swJitter = Math.floor(Math.random() * 20000) - 10000;
         setInterval(() => {
-          if (navigator.onLine) {
+          if (navigator.onLine && isSafeToUpdateNow()) {
             reg.update().catch(() => {});
           }
-        }, 30000);
+        }, 60000 + swJitter);
 
         // Check for updates whenever tab becomes visible/active
         document.addEventListener('visibilitychange', () => {

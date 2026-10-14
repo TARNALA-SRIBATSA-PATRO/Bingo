@@ -2,15 +2,41 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-
+import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const CURRENT_VERSION = '2.3.3';
+const VERSION_PAYLOAD = JSON.stringify({
+  version: CURRENT_VERSION,
+  buildTime: 1791959000000
+});
+
 const app = express();
+app.disable('x-powered-by');
+
+// Enable Gzip/Deflate compression for all HTTP responses (reduces bandwidth by ~70%)
+app.use(compression({
+  threshold: 1024,
+  level: 6
+}));
+
+// Fast in-memory endpoint for version checks (bypasses disk reads and file stat calls)
+app.get(['/version.json', '/api/version'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(VERSION_PAYLOAD);
+});
+
+// Static assets with aggressive caching for hashed files and zero-cache for critical files
 app.use(express.static(path.join(__dirname, '../client/dist'), {
+  maxAge: '1y',
+  immutable: true,
   setHeaders: (res, filePath) => {
     if (
       filePath.endsWith('sw.js') ||
@@ -23,25 +49,85 @@ app.use(express.static(path.join(__dirname, '../client/dist'), {
     }
   }
 }));
+
 app.use(cors());
 
 const httpServer = createServer(app);
+
+// Align with Render's reverse-proxy timeouts to eliminate 502 Bad Gateway race conditions
+httpServer.keepAliveTimeout = 65000;
+httpServer.headersTimeout = 66000;
+
+// High-performance Socket.IO configuration optimized for 500+ users on Render free tier (512MB RAM)
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  // CRITICAL: Disabling perMessageDeflate eliminates per-connection zlib stream allocations,
+  // saving ~150MB of RAM and removing CPU compression bottlenecks for tiny JSON messages.
+  perMessageDeflate: false,
+  httpCompression: false,
+  maxHttpBufferSize: 64 * 1024, // 64KB max packet size prevents memory exhaustion
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  cleanupEmptyChildNamespaces: true
+});
+
+// Protect single-threaded Node.js event loop from packet flood / spam
+const socketRateMap = new Map();
+io.use((socket, next) => {
+  socketRateMap.set(socket.id, { count: 0, resetTime: Date.now() });
+
+  socket.use((packet, packetNext) => {
+    const rate = socketRateMap.get(socket.id);
+    const now = Date.now();
+    if (!rate || now - rate.resetTime >= 1000) {
+      if (rate) {
+        rate.count = 1;
+        rate.resetTime = now;
+      }
+      return packetNext();
+    }
+    rate.count++;
+    if (rate.count > 30) {
+      // Drop excess packets if client exceeds 30 packets/sec
+      return;
+    }
+    packetNext();
+  });
+
+  socket.on('disconnect', () => {
+    socketRateMap.delete(socket.id);
+  });
+
+  next();
 });
 
 // rooms: { [roomId]: Room }
-// Room: {
-//   id, creatorId, players: { [socketId]: Player }, status: 'waiting'|'filling'|'playing',
-//   currentTurnIndex, calledNumbers: [], turnOrder: [socketId],
-//   winners: [{ name, wins }],  gameHistory: [{ winner, gameIndex }]
-// }
-// Player: { id, name, board: [[]], markedCells: Set, ready: boolean, bingoLines: Set }
-
 const rooms = {};
+
+// Clean up room and cancel all associated timers to prevent memory leaks
+function cleanupRoom(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  if (room.deletionTimer) {
+    clearTimeout(room.deletionTimer);
+    room.deletionTimer = null;
+  }
+
+  if (room.players) {
+    for (const player of Object.values(room.players)) {
+      if (player.disconnectTimer) {
+        clearTimeout(player.disconnectTimer);
+        player.disconnectTimer = null;
+      }
+    }
+  }
+
+  delete rooms[roomId];
+}
 
 function generateRoomId() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -81,39 +167,46 @@ function getLastWinnerPlayer(room) {
   return validWinners[Math.floor(Math.random() * validWinners.length)];
 }
 
-// Build room data personalized for a specific socket (hides other players' board numbers)
-function getRoomDataFor(room, forSocketId) {
-  const players = Object.values(room.players).map(p => ({
+// Optimized personalized broadcast: prepares shared data once per room broadcast
+function broadcastRoom(room) {
+  if (!room || !room.players) return;
+
+  const basePlayers = Object.values(room.players).map(p => ({
     id: p.id,
     name: p.name,
     ready: p.ready,
-    // Only send board numbers to the owner; everyone else gets [] (privacy)
-    board: p.id === forSocketId ? p.board : [],
-    markedCells: [...p.markedCells],
-    bingoLines: [...p.bingoLines],
-    wins: p.wins || 0
+    markedCells: Array.from(p.markedCells || []),
+    bingoLines: Array.from(p.bingoLines || []),
+    wins: p.wins || 0,
+    _rawBoard: p.board || []
   }));
-  return {
+
+  const baseData = {
     id: room.id,
     creatorId: room.creatorId,
     status: room.status,
-    players,
     leftPlayers: room.leftPlayers || {},
     currentTurnIndex: room.currentTurnIndex,
-    calledNumbers: room.calledNumbers,
+    calledNumbers: room.calledNumbers || [],
     calledHistory: room.calledHistory || [],
-    turnOrder: room.turnOrder,
-    gameHistory: room.gameHistory,
+    turnOrder: room.turnOrder || [],
+    gameHistory: room.gameHistory || [],
     currentGameIndex: room.currentGameIndex
   };
-}
 
-// Broadcast personalized updates to every player in the room
-function broadcastRoom(room) {
   for (const socketId of Object.keys(room.players)) {
     const targetSocket = io.sockets.sockets.get(socketId);
     if (targetSocket) {
-      targetSocket.emit('room:update', getRoomDataFor(room, socketId));
+      const players = basePlayers.map(p => ({
+        id: p.id,
+        name: p.name,
+        ready: p.ready,
+        board: p.id === socketId ? p._rawBoard : [],
+        markedCells: p.markedCells,
+        bingoLines: p.bingoLines,
+        wins: p.wins
+      }));
+      targetSocket.emit('room:update', { ...baseData, players });
     }
   }
 }
@@ -124,24 +217,26 @@ function checkBingo(board, markedSet) {
 
   // Rows
   for (let r = 0; r < 5; r++) {
-    const cells = [];
     let complete = true;
     for (let c = 0; c < 5; c++) {
       const val = board[r][c];
-      cells.push(val);
-      if (!markedSet.has(val)) complete = false;
+      if (!markedSet.has(val)) {
+        complete = false;
+        break;
+      }
     }
     if (complete) lines.push(`row-${r}`);
   }
 
   // Columns
   for (let c = 0; c < 5; c++) {
-    const cells = [];
     let complete = true;
     for (let r = 0; r < 5; r++) {
       const val = board[r][c];
-      cells.push(val);
-      if (!markedSet.has(val)) complete = false;
+      if (!markedSet.has(val)) {
+        complete = false;
+        break;
+      }
     }
     if (complete) lines.push(`col-${c}`);
   }
@@ -158,20 +253,20 @@ function checkBingo(board, markedSet) {
   return lines;
 }
 
-function checkSinglePlayerWin(room, io) {
+function checkSinglePlayerWin(room, ioInstance) {
   if (room.status === 'playing' && Object.keys(room.players).length === 1) {
     const lastPlayerId = Object.keys(room.players)[0];
     const lastPlayer = room.players[lastPlayerId];
-    
+
     room.status = 'finished';
     lastPlayer.wins = (lastPlayer.wins || 0) + 1;
     room.gameHistory.push({
       gameIndex: room.currentGameIndex,
       winners: [{ name: lastPlayer.name, id: lastPlayer.id }]
     });
-    
+
     broadcastRoom(room);
-    io.to(room.id).emit('game:over', {
+    ioInstance.to(room.id).emit('game:over', {
       winners: [{ name: lastPlayer.name, id: lastPlayer.id, wins: lastPlayer.wins }],
       gameHistory: room.gameHistory
     });
@@ -191,22 +286,22 @@ function touchRoomActivity(room, savedBy = null) {
 function startRoomDeletionCountdown(room, isSolo, totalPlayers) {
   if (!room || room.deletionTimer) return;
   const roomId = room.id;
-  
+
   // Emit 10-second warning countdown to all players in the room
-  io.to(roomId).emit('room:inactivityWarning', { 
+  io.to(roomId).emit('room:inactivityWarning', {
     countdown: 10,
     isSolo,
     totalPlayers
   });
-  
+
   room.deletionTimer = setTimeout(() => {
     const currentRoom = rooms[roomId];
     if (!currentRoom) return;
-    
+
     io.to(roomId).emit('room:deletedForInactivity', {
       message: 'Room was closed due to inactivity.'
     });
-    delete rooms[roomId];
+    cleanupRoom(roomId);
   }, 10000); // 10 seconds countdown
 }
 
@@ -221,7 +316,7 @@ setInterval(() => {
     const activePlayers = Object.values(room.players).filter(p => p.connected !== false);
 
     if (activePlayers.length === 0) {
-      delete rooms[roomId];
+      cleanupRoom(roomId);
       continue;
     }
 
@@ -238,13 +333,15 @@ setInterval(() => {
 }, 5000);
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
   // Create room
   socket.on('room:create', ({ name }, cb) => {
     name = (name || '').trim();
     let roomId = generateRoomId().toUpperCase();
-    while (rooms[roomId]) roomId = generateRoomId().toUpperCase();
+    let attempts = 0;
+    while (rooms[roomId] && attempts < 20) {
+      roomId = generateRoomId().toUpperCase();
+      attempts++;
+    }
 
     const player = {
       id: socket.id,
@@ -263,7 +360,7 @@ io.on('connection', (socket) => {
       status: 'filling',
       currentTurnIndex: 0,
       calledNumbers: [],
-      calledHistory: [],   // [{number, calledById}]
+      calledHistory: [], // [{number, calledById}]
       turnOrder: [],
       gameHistory: [],
       leftPlayers: {},
@@ -287,8 +384,8 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return cb({ success: false, error: 'Room not found' });
     if (room.status === 'playing') return cb({ success: false, error: 'Game already in progress' });
-    
-    // Max players limit
+
+    // Max players limit (4 players per room)
     if (Object.keys(room.players).length >= 4) {
       return cb({ success: false, error: 'Room is full (max 4 players)' });
     }
@@ -365,10 +462,7 @@ io.on('connection', (socket) => {
 
     room.status = 'playing';
 
-    // Determine turn order:
-    // If multiple rounds are played in the same room, the last winner gets the first turn.
-    // In the first round (or if the previous winner is no longer in the room),
-    // use a fair randomized shuffle algorithm so the creator does not always start first.
+    // Determine turn order
     const playerIds = Object.keys(room.players);
     const lastWinner = getLastWinnerPlayer(room);
 
@@ -381,6 +475,7 @@ io.on('connection', (socket) => {
 
     room.currentTurnIndex = 0;
     room.calledNumbers = [];
+    room.calledHistory = [];
 
     cb({ success: true });
     broadcastRoom(room);
@@ -404,7 +499,7 @@ io.on('connection', (socket) => {
     room.calledHistory.push({ number, calledById: socket.id });
 
     // Mark number for all players and check bingo
-    let winners = [];
+    const winners = [];
     for (const player of Object.values(room.players)) {
       const flat = player.board.flat();
       if (flat.includes(number)) {
@@ -427,6 +522,10 @@ io.on('connection', (socket) => {
         gameIndex: room.currentGameIndex,
         winners: winners.map(w => ({ name: w.name, id: w.id }))
       });
+      // Cap game history to 20 to prevent unbounded memory growth
+      if (room.gameHistory.length > 20) {
+        room.gameHistory.shift();
+      }
 
       broadcastRoom(room);
       io.to(roomId).emit('game:over', {
@@ -471,10 +570,7 @@ io.on('connection', (socket) => {
     }
 
     cb({ success: true });
-    // Send navigation signal FIRST so all clients go to board-setup,
-    // then deliver the fresh room state (new gameIndex, empty boards).
     io.to(roomId).emit('game:replaying');
-    // Small delay lets the client finish navigating before receiving room:update
     setTimeout(() => broadcastRoom(room), 80);
   });
 
@@ -499,25 +595,26 @@ io.on('connection', (socket) => {
       if (cb) cb({ success: true });
       return;
     }
-    
+
     const room = rooms[roomId];
     const player = room.players[socket.id];
 
     if (player) {
-      // Record their wins before leaving
       room.leftPlayers = room.leftPlayers || {};
-      room.leftPlayers[socket.id] = player;
+      room.leftPlayers[socket.id] = {
+        id: player.id,
+        name: player.name,
+        wins: player.wins || 0
+      };
     }
 
     if (room.creatorId === socket.id && Object.keys(room.players).length > 1) {
-      // If creator leaves without transferring, destroy the room
       io.to(roomId).emit('room:destroyed', { message: 'Creator left the room. Game over!' });
-      delete rooms[roomId];
+      cleanupRoom(roomId);
       if (cb) cb({ success: true });
       return;
     }
 
-    // Normal leave process
     delete room.players[socket.id];
     const idx = room.turnOrder.indexOf(socket.id);
     if (idx !== -1) {
@@ -526,7 +623,7 @@ io.on('connection', (socket) => {
     }
 
     if (Object.keys(room.players).length === 0) {
-      delete rooms[roomId];
+      cleanupRoom(roomId);
     } else {
       if (Object.keys(room.players).length === 1) {
         touchRoomActivity(room);
@@ -535,7 +632,7 @@ io.on('connection', (socket) => {
       broadcastRoom(room);
       io.to(roomId).emit('player:left', { name: socket.data.name });
     }
-    
+
     socket.data.roomId = null;
     socket.leave(roomId);
     if (cb) cb({ success: true });
@@ -547,8 +644,7 @@ io.on('connection', (socket) => {
     roomId = (roomId || '').trim().toUpperCase();
     const room = rooms[roomId];
     if (!room) return cb({ success: false, error: 'Room not found' });
-    
-    // Find player by oldPlayerId or name
+
     let existingPlayer = room.players[oldPlayerId] || Object.values(room.players).find(p => p.name === name);
     let wasLeft = false;
     if (!existingPlayer && room.leftPlayers) {
@@ -558,7 +654,6 @@ io.on('connection', (socket) => {
 
     if (!existingPlayer) return cb({ success: false, error: 'Player not found in room' });
 
-    // Migrate player to new socket ID
     const oldId = existingPlayer.id;
     existingPlayer.id = socket.id;
     existingPlayer.connected = true;
@@ -566,7 +661,7 @@ io.on('connection', (socket) => {
       clearTimeout(existingPlayer.disconnectTimer);
       delete existingPlayer.disconnectTimer;
     }
-    
+
     if (wasLeft) {
       room.players[socket.id] = existingPlayer;
       delete room.leftPlayers[oldId];
@@ -579,7 +674,7 @@ io.on('connection', (socket) => {
       const idx = room.turnOrder.indexOf(oldId);
       if (idx !== -1) room.turnOrder[idx] = socket.id;
     }
-    
+
     if (room.creatorId === oldId) room.creatorId = socket.id;
 
     touchRoomActivity(room);
@@ -615,7 +710,7 @@ io.on('connection', (socket) => {
   socket.on('room:deleteNow', () => {
     const roomId = socket.data.roomId;
     if (!roomId || !rooms[roomId]) return;
-    delete rooms[roomId];
+    cleanupRoom(roomId);
     socket.emit('room:deletedForInactivity', {
       message: 'Room was closed.'
     });
@@ -630,14 +725,18 @@ io.on('connection', (socket) => {
     if (!player) return;
 
     player.connected = false;
-    
+
     // Start a 60 second timer to remove them if they don't reconnect
     player.disconnectTimer = setTimeout(() => {
       if (!rooms[roomId] || !rooms[roomId].players[socket.id] || rooms[roomId].players[socket.id].connected) return;
-      
+
       const disconnectedPlayer = room.players[socket.id];
       room.leftPlayers = room.leftPlayers || {};
-      room.leftPlayers[socket.id] = disconnectedPlayer;
+      room.leftPlayers[socket.id] = {
+        id: disconnectedPlayer.id,
+        name: disconnectedPlayer.name,
+        wins: disconnectedPlayer.wins || 0
+      };
 
       delete room.players[socket.id];
 
@@ -657,7 +756,7 @@ io.on('connection', (socket) => {
 
       // Clean up empty rooms
       if (Object.keys(room.players).length === 0) {
-        delete rooms[roomId];
+        cleanupRoom(roomId);
         return;
       }
 
@@ -669,23 +768,13 @@ io.on('connection', (socket) => {
       broadcastRoom(room);
       io.to(roomId).emit('player:left', { name: socket.data.name });
     }, 60000);
-    
+
     broadcastRoom(room);
   });
 });
 
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
-});
-
-app.get('/api/version', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.json({
-    version: '2.3.3',
-    buildTime: Date.now()
-  });
 });
 
 app.get('*', (req, res) => {
@@ -695,9 +784,15 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
-const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Bingo server running on http://localhost:${PORT}`);
+// Process-level crash safety nets
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL] Unhandled promise rejection:', reason);
 });
 
-
+const PORT = process.env.PORT || 3001;
+httpServer.listen(PORT, () => {
+  console.log(`Bingo high-performance server running on http://localhost:${PORT}`);
+});

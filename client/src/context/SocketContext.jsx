@@ -11,6 +11,10 @@ export function SocketProvider({ children }) {
     const socket = io({
       autoConnect: true,
       transports: ['websocket', 'polling'],
+      reconnectionAttempts: 25,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000
     });
     socketRef.current = socket;
 
