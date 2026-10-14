@@ -221,6 +221,9 @@ export default function AdminDashboard() {
   const [aiContext, setAiContext] = useState(null);
   const [aiEngineUsed, setAiEngineUsed] = useState(null);
   const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [aiPredictions, setAiPredictions] = useState(null);
+  const [aiWebNotes, setAiWebNotes] = useState(null);
+  const [aiHistoryContext, setAiHistoryContext] = useState(null);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [aiAutoPilotConfig, setAiAutoPilotConfig] = useState({
@@ -500,6 +503,9 @@ export default function AdminDashboard() {
         setAiContext(data.context || null);
         setAiEngineUsed(data.engineUsed || null);
         setAiSuggestions(data.suggestions || []);
+        setAiPredictions(data.predictions || null);
+        setAiWebNotes(data.webAnalysisNotes || null);
+        setAiHistoryContext(data.historyContext || null);
       } else {
         setAiError(data.error || 'Failed to generate AI suggestions');
       }
@@ -1981,6 +1987,98 @@ export default function AdminDashboard() {
                   </span>
                 )}
               </div>
+
+              {/* Predictive Audience Reaction & Daily Pacing Card */}
+              {aiPredictions && (
+                <div className="admin-ai-predictions-card">
+                  <div className="admin-ai-predictions-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className={`admin-ai-pacing-pill ${aiPredictions.volumeStatus}`}>
+                        {aiPredictions.volumeStatus === 'optimal' ? '🟢' : aiPredictions.volumeStatus === 'moderate' ? '🟡' : '🔴'}
+                        <span>{aiPredictions.sentTodayCount} of {aiPredictions.maxOptimalDaily} Sent Today ({aiPredictions.fatigueIndex})</span>
+                      </span>
+
+                      <span className="admin-ai-buffer-badge">
+                        <ClockIcon size={13} color="#38bdf8" />
+                        <span>2-Hour Safety Buffer Active (Editable in Queue)</span>
+                      </span>
+                    </div>
+
+                    {aiWebNotes && (
+                      <span style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>
+                        🌐 {aiWebNotes}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="admin-ai-probability-grid">
+                    <div className="admin-ai-prob-box">
+                      <div className="admin-ai-prob-label">Open / Tap Rate</div>
+                      <div className="admin-ai-prob-value green">
+                        {aiPredictions.openProbability}%
+                      </div>
+                      <div className="admin-ai-prob-bar-bg">
+                        <div className="admin-ai-prob-bar-fill green" style={{ width: `${Math.min(100, aiPredictions.openProbability * 2)}%` }} />
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>
+                        ~{aiPredictions.projectedOpens} players engage
+                      </div>
+                    </div>
+
+                    <div className="admin-ai-prob-box">
+                      <div className="admin-ai-prob-label">Lockscreen View</div>
+                      <div className="admin-ai-prob-value blue">
+                        {aiPredictions.viewProbability}%
+                      </div>
+                      <div className="admin-ai-prob-bar-bg">
+                        <div className="admin-ai-prob-bar-fill blue" style={{ width: `${aiPredictions.viewProbability}%` }} />
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>
+                        Glance & remember
+                      </div>
+                    </div>
+
+                    <div className="admin-ai-prob-box">
+                      <div className="admin-ai-prob-label">Swipe Away / Ignore</div>
+                      <div className="admin-ai-prob-value gray">
+                        {aiPredictions.ignoreProbability}%
+                      </div>
+                      <div className="admin-ai-prob-bar-bg">
+                        <div className="admin-ai-prob-bar-fill gray" style={{ width: `${aiPredictions.ignoreProbability}%` }} />
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>
+                        Passive dismiss
+                      </div>
+                    </div>
+
+                    <div className="admin-ai-prob-box">
+                      <div className="admin-ai-prob-label">App Delete / Mute Risk</div>
+                      <div className={`admin-ai-prob-value ${aiPredictions.churnRiskProbability < 1.5 ? 'green' : aiPredictions.churnRiskProbability < 4 ? 'gray' : 'red'}`}>
+                        {aiPredictions.churnRiskProbability}%
+                      </div>
+                      <div className="admin-ai-prob-bar-bg">
+                        <div className={`admin-ai-prob-bar-fill ${aiPredictions.churnRiskProbability < 1.5 ? 'green' : aiPredictions.churnRiskProbability < 4 ? 'gray' : 'red'}`} style={{ width: `${Math.min(100, aiPredictions.churnRiskProbability * 10)}%` }} />
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: aiPredictions.churnRiskProbability < 1.5 ? '#4ade80' : '#f87171', marginTop: '4px' }}>
+                        {aiPredictions.churnRiskProbability < 1.5 ? 'Very Low / Safe 🛡️' : 'Caution ⚠️'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="admin-ai-advice-banner">
+                    💡 <strong>AI Strategy:</strong> {aiPredictions.advice}
+                  </div>
+
+                  {aiHistoryContext?.sentTodayTitles?.length > 0 && (
+                    <div className="admin-ai-memory-pill">
+                      <span>🧠</span>
+                      <span>
+                        Sent earlier today: <em>"{aiHistoryContext.sentTodayTitles[0]}"</em> — AI ensured 100% unique & non-repeating copy below!
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="admin-ai-suggestions-grid">
                 {aiSuggestions.map((sugg) => (

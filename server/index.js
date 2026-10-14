@@ -31,6 +31,7 @@ import {
   getSchedulingNotices,
   getAiAutoPilotConfig,
   updateAiAutoPilotConfig,
+  getSentTodayAndRecent,
   generateSmartNotificationCampaign
 } from './analyticsStore.js';
 import {
@@ -75,7 +76,7 @@ for (const envCandidate of [
   }
 }
 
-const CURRENT_VERSION = '2.4.9';
+const CURRENT_VERSION = '2.5.0';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()
@@ -1003,8 +1004,10 @@ app.get('/api/admin/ai-push/suggestions', requireAdminAuth, async (req, res) => 
   try {
     const stats = getAdminDashboardStats();
     const config = getAiAutoPilotConfig();
+    const historyData = getSentTodayAndRecent();
     const campaign = await generateSmartNotificationCampaign({
       stats,
+      historyData,
       apiKey: config?.geminiApiKey
     });
     res.json({ success: true, ...campaign });

@@ -63,7 +63,7 @@
     "usr_c42fbb6b7283279d592054ca": {
       "id": "usr_c42fbb6b7283279d592054ca",
       "isPwa": true,
-      "visits": 14,
+      "visits": 15,
       "botStats": {
         "pro": {
           "draws": 3,
@@ -85,10 +85,40 @@
         },
         "totalMatches": 31
       },
-      "lastSeen": 1791972865741,
+      "lastSeen": 1791978440920,
       "firstSeen": 1791971212158,
       "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36",
       "installedAt": 1791971225727
+    },
+    "usr_0391aae26d817dca3f3ebe0e": {
+      "id": "usr_0391aae26d817dca3f3ebe0e",
+      "isPwa": true,
+      "visits": 4,
+      "botStats": {
+        "pro": {
+          "draws": 1,
+          "total": 2,
+          "botWins": 0,
+          "userWins": 1
+        },
+        "beginner": {
+          "draws": 0,
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "intermediate": {
+          "draws": 0,
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "totalMatches": 2
+      },
+      "lastSeen": 1791979345181,
+      "firstSeen": 1791979120893,
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36",
+      "installedAt": 1791979134979
     }
   },
   "hourlyActivity": {
@@ -104,8 +134,8 @@
       33,
       31,
       7,
-      5,
-      0,
+      9,
+      1,
       0,
       0,
       0,
@@ -123,17 +153,17 @@
     "2026-10-14": [
       "usr_64955ec13e41797149dcbbf2",
       "usr_c42fbb6b7283279d592054ca",
-      "usr_58f24b16717c5c496d3577f1"
+      "usr_0391aae26d817dca3f3ebe0e"
     ]
   },
   "botStats": {
-    "totalMatches": 60,
-    "totalDurationMs": 0,
-    "matchesWithDuration": 0,
+    "totalMatches": 63,
+    "totalDurationMs": 140931,
+    "matchesWithDuration": 3,
     "beginner": {
       "draws": 0,
-      "total": 8,
-      "botWins": 2,
+      "total": 9,
+      "botWins": 3,
       "userWins": 6
     },
     "intermediate": {
@@ -143,10 +173,10 @@
       "userWins": 6
     },
     "pro": {
-      "draws": 4,
-      "total": 28,
+      "draws": 5,
+      "total": 30,
       "botWins": 17,
-      "userWins": 7
+      "userWins": 8
     }
   },
   "multiplayerStats": {
@@ -193,9 +223,32 @@
         "endpoint": "https://fcm.googleapis.com/fcm/send/e8fyNEIpWi0:APA91bHJZnlDUk2K6V0ihzexrhBGrOu5uCFHQcWVIjYaJDUWTUCptwy3LvbleISixoaW019sACStihp5jQUWb4rS1-7gVjKhPXo5poB44JoSNsSK0l2wzew3FLbAvhQH0Jr-uPyV1LNU",
         "expirationTime": null
       }
+    },
+    "https://fcm.googleapis.com/fcm/send/dQ36NhVnJqQ:APA91bG0HtUo7pao--x2Nc4mS3dMH6oE0xskz2_wkVP8zeSwHL36BbziemZ5dGLwMmw9vVf0QkpBwxCZyG9JBP3wDoivc6LHFbqp015qjulefkL-LX7DaV3SRNXs5b-KoqH9Rm5ky4m8": {
+      "userId": "usr_0391aae26d817dca3f3ebe0e",
+      "createdAt": 1791979171012,
+      "subscription": {
+        "keys": {
+          "auth": "yvKVkbb2T4EBm-R3puJNSQ",
+          "p256dh": "BFDAhvopHuUw32K8Z9Vt3-W2x7fh3drcr07LZAxvazh1d2uS2YgWznudchrsrvvmpHk3s0L3KmLwrqHfWAQT7vU"
+        },
+        "endpoint": "https://fcm.googleapis.com/fcm/send/dQ36NhVnJqQ:APA91bG0HtUo7pao--x2Nc4mS3dMH6oE0xskz2_wkVP8zeSwHL36BbziemZ5dGLwMmw9vVf0QkpBwxCZyG9JBP3wDoivc6LHFbqp015qjulefkL-LX7DaV3SRNXs5b-KoqH9Rm5ky4m8",
+        "expirationTime": null
+      }
     }
   },
   "notificationsHistory": [
+    {
+      "id": "push_1791978204235_n1ixz",
+      "url": "/lobby",
+      "title": "📅 Scheduled: Chai time + Quick Bingo ☕",
+      "sentAt": 1791978204494,
+      "message": "⚡ Upcoming match at 02:45 PM! Steaming cup of tea in hand? Pair your 4 PM chai break with an instant Bing",
+      "clicksCount": 1,
+      "failedCount": 0,
+      "deliveredCount": 3,
+      "conversionsCount": 0
+    },
     {
       "id": "notif_1791972909938_kcmy0",
       "url": "/lobby",
@@ -227,20 +280,42 @@
       "message": "Doctors recommend 5 minutes of pure fun to beat the 3 PM fatigue! Close that spreadsheet and grab a quick, refreshing win 🏆",
       "createdAt": 1791972798150,
       "scheduledAt": 1791976500000
+    },
+    {
+      "id": "sched_1791978204235_1xsne",
+      "url": "/lobby",
+      "title": "Chai time + Quick Bingo ☕",
+      "source": "ai_autopilot",
+      "status": "cancelled",
+      "message": "Steaming cup of tea in hand? Pair your 4 PM chai break with an instant Bingo match!",
+      "createdAt": 1791978204235,
+      "scheduledAt": 1791989100000
     }
   ],
   "aiAutoPilot": {
-    "enabled": false,
-    "lastScheduledDate": null,
-    "lastRunAt": null,
+    "enabled": true,
+    "lastScheduledDate": "2026-10-14",
+    "lastRunAt": 1791978204494,
     "geminiApiKey": null
   },
-  "schedulingNotices": [],
+  "schedulingNotices": [
+    {
+      "id": "notice_1791978204235_xbxlj",
+      "title": "Chai time + Quick Bingo ☕",
+      "source": "ai_autopilot",
+      "message": "Steaming cup of tea in hand? Pair your 4 PM chai break with an instant Bingo match!",
+      "createdAt": 1791978204235,
+      "campaignId": "sched_1791978204235_1xsne",
+      "scheduledAt": 1791989100000,
+      "scheduledAtDesc": "Wed, Oct 14 at 02:45 PM",
+      "advanceNoticeSent": true
+    }
+  ],
   "pushFunnel": {
-    "promptsShown": 0,
-    "promptsGranted": 4,
-    "promptsDenied": 0,
-    "totalClicks": 0,
+    "promptsShown": 5,
+    "promptsGranted": 5,
+    "promptsDenied": 5,
+    "totalClicks": 1,
     "totalConversions": 0
   },
   "adminSecurity": {

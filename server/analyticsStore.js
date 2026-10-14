@@ -634,6 +634,56 @@ export function getNotificationsHistory() {
   return memoryStore.notificationsHistory || [];
 }
 
+// Get YYYY-MM-DD in Indian Standard Time (IST)
+export function getTodayKeyIST(date = new Date()) {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(date.getTime() + istOffset);
+  const y = istDate.getUTCFullYear();
+  const m = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(istDate.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// Retrieve notifications sent today + recent history for AI anti-repetition memory
+export function getSentTodayAndRecent() {
+  const todayKeyIST = getTodayKeyIST();
+  const history = memoryStore.notificationsHistory || [];
+  const scheduled = memoryStore.scheduledNotifications || [];
+
+  const sentTodayList = history.filter(item => {
+    if (!item.sentAt) return false;
+    return getTodayKeyIST(new Date(item.sentAt)) === todayKeyIST;
+  });
+
+  const pendingScheduledList = scheduled.filter(item => {
+    return item.status === 'pending' && item.scheduledAt > Date.now();
+  });
+
+  return {
+    sentTodayCount: sentTodayList.length,
+    sentTodayList: sentTodayList.map(h => ({
+      id: h.id,
+      title: h.title,
+      message: h.message,
+      sentAt: h.sentAt,
+      clicksCount: h.clicksCount || 0,
+      conversionsCount: h.conversionsCount || 0
+    })),
+    recentList: history.slice(0, 5).map(h => ({
+      id: h.id,
+      title: h.title,
+      message: h.message,
+      sentAt: h.sentAt
+    })),
+    pendingScheduledCount: pendingScheduledList.length,
+    pendingScheduledList: pendingScheduledList.map(s => ({
+      id: s.id,
+      title: s.title,
+      scheduledAt: s.scheduledAt
+    }))
+  };
+}
+
 // -------------------------------------------------------------
 // SCHEDULED PUSH NOTIFICATIONS & ADVANCE NOTICES
 // -------------------------------------------------------------
@@ -649,9 +699,17 @@ export async function schedulePushNotification({
     throw new Error('Title and message are required.');
   }
 
-  const time = typeof scheduledAt === 'number' ? scheduledAt : new Date(scheduledAt).getTime();
+  let time = typeof scheduledAt === 'number' ? scheduledAt : new Date(scheduledAt).getTime();
   if (isNaN(time) || time <= Date.now()) {
     throw new Error('Scheduled date and time must be set in the future.');
+  }
+
+  // If scheduled automatically via AI Auto-Pilot, strictly enforce minimum 2 hours review buffer
+  if (source === 'ai_autopilot') {
+    const minBuffer = Date.now() + 2 * 60 * 60 * 1000;
+    if (time < minBuffer) {
+      time = minBuffer + 15 * 60 * 1000;
+    }
   }
 
   const schedId = `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -765,16 +823,20 @@ export async function processAiAutoPilotTick() {
 
   try {
     const stats = getAdminDashboardStats();
+    const historyData = getSentTodayAndRecent();
+    const effectiveKey = memoryStore.aiAutoPilot.geminiApiKey || process.env.GEMINI_API_KEY;
     const campaign = await generateSmartNotificationCampaign({
       stats,
-      apiKey: memoryStore.aiAutoPilot.geminiApiKey
+      historyData,
+      apiKey: effectiveKey
     });
 
     if (campaign && campaign.suggestions && campaign.suggestions.length > 0) {
       const topPick = campaign.suggestions[0];
       let triggerTime = topPick.scheduledAt;
-      if (!triggerTime || triggerTime <= now + 5 * 60 * 1000) {
-        triggerTime = now + 20 * 60 * 1000;
+      // Strictly enforce minimum 2 hours advance buffer
+      if (!triggerTime || triggerTime < now + 2 * 60 * 60 * 1000) {
+        triggerTime = now + 2 * 60 * 60 * 1000 + 15 * 60 * 1000;
       }
 
       await schedulePushNotification({
@@ -789,7 +851,7 @@ export async function processAiAutoPilotTick() {
       memoryStore.aiAutoPilot.lastScheduledDate = todayKey;
       memoryStore.aiAutoPilot.lastRunAt = Date.now();
       scheduleFlush('ai_auto_pilot');
-      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign: "${topPick.title}" for ${formatTimeIST(triggerTime, true)}`);
+      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign (2hr+ buffer): "${topPick.title}" for ${formatTimeIST(triggerTime, true)}`);
     }
   } catch (err) {
     console.error('[AI Auto-Pilot] Error in auto-pilot tick:', err);
@@ -1126,7 +1188,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.9',
+    version: '2.5.0',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
