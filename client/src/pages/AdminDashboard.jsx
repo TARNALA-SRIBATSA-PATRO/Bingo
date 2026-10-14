@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './AdminDashboard.css';
 
 // SVG Icons
@@ -8,6 +8,14 @@ const LockIcon = ({ size = 20 }) => (
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </svg>
 );
+
+const ClockIcon = ({ size = 20, color = "#f59e0b" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
 
 const UsersIcon = ({ size = 20, color = "#6366f1" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -83,12 +91,21 @@ export default function AdminDashboard() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
-  // Push Broadcast State
+  // Push Broadcast & Scheduling State
   const [pushTitle, setPushTitle] = useState('');
   const [pushMessage, setPushMessage] = useState('');
   const [pushUrl, setPushUrl] = useState('/lobby');
   const [isSendingPush, setIsSendingPush] = useState(false);
   const [pushFeedback, setPushFeedback] = useState(null);
+
+  // Delivery Mode: 'instant' vs 'scheduled'
+  const [deliveryMode, setDeliveryMode] = useState('instant');
+  const [scheduledDateTime, setScheduledDateTime] = useState(() => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
+  const [scheduledList, setScheduledList] = useState([]);
 
   // Snapshot Vault & Container Redeployment Detection
   const [redeployAlert, setRedeployAlert] = useState(null);
@@ -124,7 +141,7 @@ export default function AdminDashboard() {
     return { startDate: start, endDate: end };
   }, [rangeMode, customStart, customEnd]);
 
-  // Fetch Dashboard Stats
+  // Fetch Dashboard Stats & Scheduled Queue
   const fetchDashboardData = useCallback(async (authToken = token) => {
     if (!authToken) return;
     setIsLoading(true);
@@ -133,11 +150,14 @@ export default function AdminDashboard() {
       if (queryParams.startDate) query.append('startDate', queryParams.startDate);
       if (queryParams.endDate) query.append('endDate', queryParams.endDate);
 
-      const [statsRes, historyRes] = await Promise.all([
+      const [statsRes, historyRes, scheduledRes] = await Promise.all([
         fetch(`/api/admin/stats?${query.toString()}`, {
           headers: { 'x-admin-token': authToken }
         }),
         fetch('/api/admin/push/history', {
+          headers: { 'x-admin-token': authToken }
+        }),
+        fetch('/api/admin/push/scheduled', {
           headers: { 'x-admin-token': authToken }
         })
       ]);
@@ -151,6 +171,7 @@ export default function AdminDashboard() {
 
       const statsData = await statsRes.json();
       const historyData = await historyRes.json();
+      const scheduledData = scheduledRes.ok ? await scheduledRes.json() : null;
 
       if (statsData.success) {
         const currentStats = statsData.stats;
@@ -200,12 +221,43 @@ export default function AdminDashboard() {
       if (historyData.success) {
         setHistoryList(historyData.history || []);
       }
+      if (scheduledData && scheduledData.success) {
+        setScheduledList(scheduledData.scheduled || []);
+      }
     } catch (err) {
       console.warn('[Admin] Failed to fetch dashboard data:', err);
     } finally {
       setIsLoading(false);
     }
   }, [token, queryParams]);
+
+  // Fetch only the scheduled notifications list
+  const fetchScheduledQueue = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/push/scheduled', {
+        headers: { 'x-admin-token': token }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScheduledList(data.scheduled || []);
+      }
+    } catch {}
+  }, [token]);
+
+  // Calculate user-friendly relative countdown string
+  function getRelativeTimeDesc(dateTimeStr) {
+    if (!dateTimeStr) return '';
+    const diffMs = new Date(dateTimeStr).getTime() - Date.now();
+    if (diffMs <= 0) return 'momentarily';
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 60) return `~${mins} minute(s)`;
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    if (hours < 24) return `~${hours}h ${remMins}m`;
+    const days = Math.round(hours / 24);
+    return `~${days} day(s)`;
+  }
 
   // Restore saved snapshot to server
   async function handleRestoreSnapshot() {
@@ -351,37 +403,62 @@ export default function AdminDashboard() {
     setStats(null);
   }
 
-  // Handle Push Send
+  // Handle Push Send (Instant Broadcast or Scheduled for later)
   async function handleSendPush(e) {
     e.preventDefault();
     if (!pushTitle.trim() || !pushMessage.trim()) return;
+
+    if (deliveryMode === 'scheduled') {
+      const scheduledMs = new Date(scheduledDateTime).getTime();
+      if (isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+        setPushFeedback({
+          type: 'error',
+          text: 'Please select a future date and time for scheduled notification.'
+        });
+        return;
+      }
+    }
 
     setIsSendingPush(true);
     setPushFeedback(null);
 
     try {
-      const res = await fetch('/api/admin/push/send', {
+      const endpoint = deliveryMode === 'scheduled' ? '/api/admin/push/schedule' : '/api/admin/push/send';
+      const payload = {
+        title: pushTitle.trim(),
+        message: pushMessage.trim(),
+        url: pushUrl.trim() || '/lobby',
+        ...(deliveryMode === 'scheduled' ? { scheduledAt: new Date(scheduledDateTime).toISOString() } : {})
+      };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-token': token
         },
-        body: JSON.stringify({
-          title: pushTitle.trim(),
-          message: pushMessage.trim(),
-          url: pushUrl.trim() || '/'
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
       if (data.success) {
-        setPushFeedback({
-          type: 'success',
-          text: `Notification dispatched successfully! Delivered to ${data.deliveredCount} phone(s)/device(s). ${data.failedCount > 0 ? `(${data.failedCount} expired unsubscribed)` : ''}`
-        });
-        setPushTitle('');
-        setPushMessage('');
-        fetchDashboardData();
+        if (deliveryMode === 'scheduled') {
+          setPushFeedback({
+            type: 'success',
+            text: `Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! It will automatically broadcast to all devices at the specified time.`
+          });
+          setPushTitle('');
+          setPushMessage('');
+          fetchScheduledQueue();
+        } else {
+          setPushFeedback({
+            type: 'success',
+            text: `Notification dispatched successfully! Delivered to ${data.deliveredCount} phone(s)/device(s). ${data.failedCount > 0 ? `(${data.failedCount} expired unsubscribed)` : ''}`
+          });
+          setPushTitle('');
+          setPushMessage('');
+          fetchDashboardData();
+        }
       } else {
         setPushFeedback({ type: 'error', text: data.error || 'Failed to dispatch push notification.' });
       }
@@ -391,6 +468,26 @@ export default function AdminDashboard() {
       setIsSendingPush(false);
     }
   }
+
+  // Handle Cancel Scheduled Notification
+  async function handleCancelScheduled(id) {
+    if (!window.confirm('Are you sure you want to cancel this scheduled notification?')) return;
+    try {
+      const res = await fetch(`/api/admin/push/scheduled/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': token }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScheduledList((prev) => prev.filter((item) => item.id !== id));
+      } else {
+        alert(data.error || 'Failed to cancel scheduled notification');
+      }
+    } catch {
+      alert('Network error while canceling scheduled notification.');
+    }
+  }
+
 
   // Handle Change Password
   async function handleChangePassword(e) {
@@ -974,7 +1071,7 @@ export default function AdminDashboard() {
           <div>
             <h3>Push Notification Broadcast Station</h3>
             <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
-              Broadcast real-time push alerts directly to the phones and devices of all subscribed members
+              Broadcast instant alerts or schedule automated notifications directly to players' phones & devices
             </p>
           </div>
           <span className="admin-peak-chip" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#facc15', borderColor: '#eab308' }}>
@@ -994,7 +1091,55 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        <form onSubmit={handleSendPush} style={{ marginTop: '16px' }}>
+        {/* Delivery Mode Selector */}
+        <div style={{ marginTop: '16px' }}>
+          <div className="admin-delivery-pills">
+            <button
+              type="button"
+              className={`admin-delivery-pill ${deliveryMode === 'instant' ? 'active' : ''}`}
+              onClick={() => setDeliveryMode('instant')}
+            >
+              ⚡ Send Immediately
+            </button>
+            <button
+              type="button"
+              className={`admin-delivery-pill ${deliveryMode === 'scheduled' ? 'active' : ''}`}
+              onClick={() => setDeliveryMode('scheduled')}
+            >
+              ⏰ Schedule for Later
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSendPush}>
+          {deliveryMode === 'scheduled' && (
+            <div className="admin-scheduled-box">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ClockIcon size={16} color="#818cf8" />
+                  <span>Select Scheduled Date & Time (Your Local Timezone)</span>
+                </label>
+                {scheduledDateTime && (
+                  <span style={{ fontSize: '0.8rem', color: '#a5b4fc', fontWeight: 600 }}>
+                    Trigger countdown: {getRelativeTimeDesc(scheduledDateTime)}
+                  </span>
+                )}
+              </div>
+              <input
+                type="datetime-local"
+                className="admin-input"
+                style={{ maxWidth: '320px' }}
+                value={scheduledDateTime}
+                min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                onChange={(e) => setScheduledDateTime(e.target.value)}
+                required={deliveryMode === 'scheduled'}
+              />
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                ℹ️ When the scheduled time arrives, the server will automatically dispatch this push notification to all registered phones and record the event into Dispatched History.
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '14px' }}>
             <div className="admin-form-group" style={{ marginBottom: 0 }}>
               <label>Notification Title</label>
@@ -1036,13 +1181,88 @@ export default function AdminDashboard() {
             disabled={isSendingPush || !pushTitle.trim() || !pushMessage.trim()}
             style={{ width: 'auto', padding: '12px 28px' }}
           >
-            <BellIcon size={16} color="#fff" />
-            <span>{isSendingPush ? 'Broadcasting via Web Push...' : 'Send Broadcast to All Devices'}</span>
+            {deliveryMode === 'scheduled' ? (
+              <>
+                <ClockIcon size={16} color="#fff" />
+                <span>{isSendingPush ? 'Scheduling Notification...' : 'Schedule Automated Notification ⏰'}</span>
+              </>
+            ) : (
+              <>
+                <BellIcon size={16} color="#fff" />
+                <span>{isSendingPush ? 'Broadcasting via Web Push...' : 'Send Broadcast to All Devices 🚀'}</span>
+              </>
+            )}
           </button>
         </form>
 
+        {/* Upcoming Scheduled Notifications Queue */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '32px 0 12px' }}>
+          <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ClockIcon size={18} color="#facc15" />
+            <span>Upcoming Scheduled Notifications Queue ({scheduledList.length})</span>
+          </h4>
+          <button
+            type="button"
+            onClick={fetchScheduledQueue}
+            className="admin-refresh-btn"
+            title="Refresh scheduled queue"
+          >
+            <RefreshIcon size={14} />
+          </button>
+        </div>
+
+        <div className="admin-table-wrapper" style={{ marginBottom: '24px' }}>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Scheduled Trigger Time</th>
+                <th>Title</th>
+                <th>Message</th>
+                <th>Target URL</th>
+                <th>Countdown</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scheduledList.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
+                    No scheduled notifications pending in queue. Schedule one above to fire automatically at any future date and time!
+                  </td>
+                </tr>
+              ) : (
+                scheduledList.map((item) => (
+                  <tr key={item.id}>
+                    <td style={{ whiteSpace: 'nowrap', fontSize: '0.84rem', fontWeight: 600, color: '#f8fafc' }}>
+                      {new Date(item.scheduledAt).toLocaleString()}
+                    </td>
+                    <td style={{ fontWeight: 600, color: '#fff' }}>{item.title}</td>
+                    <td style={{ maxWidth: '260px', whiteSpace: 'pre-wrap' }}>{item.message}</td>
+                    <td><code>{item.url || '/'}</code></td>
+                    <td>
+                      <span className="admin-scheduled-badge">
+                        ⏰ in {getRelativeTimeDesc(item.scheduledAt)}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="admin-cancel-btn"
+                        onClick={() => handleCancelScheduled(item.id)}
+                      >
+                        Cancel
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
         {/* Notification History Log Table */}
         <h4 style={{ margin: '28px 0 12px', fontSize: '1rem', color: '#f1f5f9' }}>Dispatched Notification History</h4>
+
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>

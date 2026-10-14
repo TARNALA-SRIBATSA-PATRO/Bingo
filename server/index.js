@@ -18,7 +18,10 @@ import {
   sendBroadcastPushNotification,
   getNotificationsHistory,
   restoreBackupData,
-  getBackupPayload
+  getBackupPayload,
+  schedulePushNotification,
+  getScheduledNotifications,
+  cancelScheduledNotification
 } from './analyticsStore.js';
 import {
   handleAdminLogin,
@@ -31,7 +34,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.7';
+const CURRENT_VERSION = '2.3.8';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: 1791963000000
@@ -871,6 +874,26 @@ app.post('/api/admin/push/send', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/push/history', requireAdminAuth, (req, res) => {
   res.json({ success: true, history: getNotificationsHistory() });
+});
+
+// Scheduled Push Notification Endpoints
+app.post('/api/admin/push/schedule', requireAdminAuth, (req, res) => {
+  const { title, message, url, scheduledAt } = req.body || {};
+  try {
+    const scheduledItem = schedulePushNotification({ title, message, url, scheduledAt });
+    res.json({ success: true, scheduledItem });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/admin/push/scheduled', requireAdminAuth, (req, res) => {
+  res.json({ success: true, scheduled: getScheduledNotifications() });
+});
+
+app.delete('/api/admin/push/scheduled/:id', requireAdminAuth, (req, res) => {
+  const cancelled = cancelScheduledNotification(req.params.id);
+  res.json({ success: cancelled });
 });
 
 // Admin Analytics Vault Backup & Restore Endpoints

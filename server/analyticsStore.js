@@ -27,6 +27,7 @@ const defaultState = {
   },
   pushSubscriptions: {}, // { [endpoint]: { subscription, userId, createdAt } }
   notificationsHistory: [], // [ { id, title, message, url, sentAt, deliveredCount, failedCount } ]
+  scheduledNotifications: [], // [ { id, title, message, url, scheduledAt, createdAt, status } ]
   adminSecurity: {
     passwordHash: null,
     passwordSalt: null,
@@ -58,6 +59,7 @@ function loadStore() {
         ...parsed,
         botStats: { ...defaultState.botStats, ...(parsed.botStats || {}) },
         multiplayerStats: { ...defaultState.multiplayerStats, ...(parsed.multiplayerStats || {}) },
+        scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
       console.log('[AnalyticsStore] State loaded from disk successfully.');
@@ -384,6 +386,94 @@ export function getNotificationsHistory() {
   return memoryStore.notificationsHistory || [];
 }
 
+// -------------------------------------------------------------
+// SCHEDULED PUSH NOTIFICATIONS
+// -------------------------------------------------------------
+export function schedulePushNotification({ title, message, url, scheduledAt }) {
+  if (!title || !message) {
+    throw new Error('Title and message are required.');
+  }
+
+  const time = typeof scheduledAt === 'number' ? scheduledAt : new Date(scheduledAt).getTime();
+  if (isNaN(time) || time <= Date.now()) {
+    throw new Error('Scheduled date and time must be set in the future.');
+  }
+
+  const item = {
+    id: `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    title: title.trim(),
+    message: message.trim(),
+    url: (url && url.trim()) || '/',
+    scheduledAt: time,
+    createdAt: Date.now(),
+    status: 'pending' // 'pending' | 'sent' | 'cancelled'
+  };
+
+  if (!memoryStore.scheduledNotifications) {
+    memoryStore.scheduledNotifications = [];
+  }
+
+  memoryStore.scheduledNotifications.push(item);
+  memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
+  scheduleFlush();
+  return item;
+}
+
+export function getScheduledNotifications() {
+  if (!memoryStore.scheduledNotifications) {
+    memoryStore.scheduledNotifications = [];
+  }
+  return memoryStore.scheduledNotifications.filter(item => item.status === 'pending');
+}
+
+export function cancelScheduledNotification(id) {
+  if (!id || !memoryStore.scheduledNotifications) return false;
+  const item = memoryStore.scheduledNotifications.find(n => n.id === id);
+  if (item && item.status === 'pending') {
+    item.status = 'cancelled';
+    scheduleFlush();
+    return true;
+  }
+  return false;
+}
+
+// Process any pending scheduled push notifications that have become due
+export async function processDueScheduledNotifications() {
+  if (!memoryStore.scheduledNotifications || memoryStore.scheduledNotifications.length === 0) return;
+  const now = Date.now();
+  const due = memoryStore.scheduledNotifications.filter(
+    n => n.status === 'pending' && n.scheduledAt <= now
+  );
+
+  for (const item of due) {
+    item.status = 'processing';
+    try {
+      const result = await sendBroadcastPushNotification({
+        title: item.title,
+        message: item.message,
+        url: item.url
+      });
+      item.status = 'sent';
+      item.sentAt = Date.now();
+      item.deliveredCount = result.deliveredCount || 0;
+      item.failedCount = result.failedCount || 0;
+      console.log(`[PushScheduler] Dispatched scheduled broadcast "${item.title}" to ${result.deliveredCount} devices.`);
+    } catch (err) {
+      console.error(`[PushScheduler] Error dispatching scheduled notification "${item.id}":`, err);
+      item.status = 'failed';
+      item.error = err.message;
+    }
+  }
+
+  if (due.length > 0) {
+    // Retain pending items and last 30 completed/cancelled items
+    const pending = memoryStore.scheduledNotifications.filter(n => n.status === 'pending');
+    const past = memoryStore.scheduledNotifications.filter(n => n.status !== 'pending').slice(-30);
+    memoryStore.scheduledNotifications = [...pending, ...past];
+    scheduleFlush();
+  }
+}
+
 // Compute Statistics for Admin Dashboard
 export function getAdminDashboardStats({ startDate, endDate } = {}) {
   const now = Date.now();
@@ -563,7 +653,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.3.5',
+    version: '2.3.8',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
@@ -571,7 +661,8 @@ export function getBackupPayload() {
     botStats: memoryStore.botStats,
     multiplayerStats: memoryStore.multiplayerStats,
     pushSubscriptions: memoryStore.pushSubscriptions,
-    notificationsHistory: memoryStore.notificationsHistory
+    notificationsHistory: memoryStore.notificationsHistory,
+    scheduledNotifications: memoryStore.scheduledNotifications || []
   };
 }
 
@@ -628,7 +719,20 @@ export function restoreBackupData(backupData) {
     memoryStore.notificationsHistory.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
   }
 
-  // 5. Merge multiplayer stats
+  // 5. Merge scheduled notifications
+  if (Array.isArray(backupData.scheduledNotifications)) {
+    if (!memoryStore.scheduledNotifications) memoryStore.scheduledNotifications = [];
+    const existingSchedIds = new Set(memoryStore.scheduledNotifications.map(s => s.id));
+    for (const sched of backupData.scheduledNotifications) {
+      if (sched && sched.id && !existingSchedIds.has(sched.id)) {
+        memoryStore.scheduledNotifications.push(sched);
+        existingSchedIds.add(sched.id);
+      }
+    }
+    memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
+  }
+
+  // 6. Merge multiplayer stats
   if (backupData.multiplayerStats) {
     memoryStore.multiplayerStats.roomsCreated = Math.max(
       memoryStore.multiplayerStats.roomsCreated || 0,
@@ -648,3 +752,10 @@ export function restoreBackupData(backupData) {
 
 // Initialize on module import
 loadStore();
+
+// Start recurring background scheduler (checks every 20 seconds for due notifications)
+setInterval(() => {
+  processDueScheduledNotifications().catch(err => {
+    console.error('[PushScheduler] Background job error:', err);
+  });
+}, 20000);
