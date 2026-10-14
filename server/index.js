@@ -28,6 +28,7 @@ import {
   handleAdminLogin,
   handleAdminLogout,
   handleAdminChangePassword,
+  handleAdminSessionCheck,
   requireAdminAuth,
   verifyAdminToken,
   ADMIN_PATH
@@ -36,10 +37,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.4';
+const CURRENT_VERSION = '2.4.5';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791972000000
+  buildTime: 1791973000000
 });
 
 const app = express();
@@ -874,6 +875,7 @@ app.post('/api/push/subscribe', (req, res) => {
 // Admin Authentication Endpoints
 app.post('/api/admin/login', handleAdminLogin);
 app.post('/api/admin/logout', handleAdminLogout);
+app.get('/api/admin/session', requireAdminAuth, handleAdminSessionCheck);
 app.post('/api/admin/change-password', requireAdminAuth, handleAdminChangePassword);
 
 // Admin Data & Management Endpoints (Strictly Protected)

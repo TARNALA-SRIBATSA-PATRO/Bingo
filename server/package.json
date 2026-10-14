@@ -1,6 +1,6 @@
 {
   "name": "bingo-server",
-  "version": "2.4.4",
+  "version": "2.4.5",
   "description": "Bingo game server",
   "main": "index.js",
   "type": "module",

@@ -99,14 +99,46 @@ export default function AdminDashboard() {
   }, []);
   const [token, setToken] = useState(() => {
     try {
-      return sessionStorage.getItem('bingo_admin_token') || '';
+      const savedToken = sessionStorage.getItem('bingo_admin_token') || '';
+      const savedExpiresAt = Number(sessionStorage.getItem('bingo_admin_expires_at') || 0);
+      if (savedToken && savedExpiresAt && Date.now() > savedExpiresAt) {
+        sessionStorage.removeItem('bingo_admin_token');
+        sessionStorage.removeItem('bingo_admin_expires_at');
+        return '';
+      }
+      return savedToken;
     } catch {
       return '';
     }
   });
 
+  const [sessionExpiresAt, setSessionExpiresAt] = useState(() => {
+    try {
+      return Number(sessionStorage.getItem('bingo_admin_expires_at') || 0);
+    } catch {
+      return 0;
+    }
+  });
+
+  const [sessionRemainingSecs, setSessionRemainingSecs] = useState(() => {
+    try {
+      const exp = Number(sessionStorage.getItem('bingo_admin_expires_at') || 0);
+      return exp ? Math.max(0, Math.floor((exp - Date.now()) / 1000)) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
   const [passwordInput, setPasswordInput] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState(() => {
+    try {
+      const exp = Number(sessionStorage.getItem('bingo_admin_expires_at') || 0);
+      if (exp && Date.now() > exp) {
+        return 'Your admin session expired. Please sign in again.';
+      }
+    } catch {}
+    return '';
+  });
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -172,6 +204,96 @@ export default function AdminDashboard() {
     return { startDate: start, endDate: end };
   }, [rangeMode, customStart, customEnd]);
 
+  // Format seconds into readable countdown string (e.g., 29m 45s or 45s)
+  function formatSessionCountdown(secs) {
+    if (secs <= 0) return 'Expired';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+    return `${s}s`;
+  }
+
+  // Handle Admin Logout & Session Cleanup
+  const handleLogout = useCallback((isExpired = false) => {
+    if (token) {
+      fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: { 'x-admin-token': token }
+      }).catch(() => {});
+    }
+    setToken('');
+    setSessionExpiresAt(0);
+    setSessionRemainingSecs(0);
+    sessionStorage.removeItem('bingo_admin_token');
+    sessionStorage.removeItem('bingo_admin_expires_at');
+    setStats(null);
+    if (isExpired) {
+      setAuthError('Your admin session expired after 30 minutes of inactivity. Please sign in again.');
+    }
+  }, [token]);
+
+  // Extend / Refresh Session
+  const extendSession = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/session', {
+        headers: { 'x-admin-token': token }
+      });
+      if (res.status === 401) {
+        handleLogout(true);
+        return;
+      }
+      const data = await res.json();
+      if (data.success && data.expiresAt) {
+        setSessionExpiresAt(data.expiresAt);
+        setSessionRemainingSecs(Math.max(0, Math.floor((data.expiresAt - Date.now()) / 1000)));
+        sessionStorage.setItem('bingo_admin_expires_at', String(data.expiresAt));
+      }
+    } catch {}
+  }, [token, handleLogout]);
+
+  // Session Expiration Countdown Timer (1-second tick)
+  useEffect(() => {
+    if (!token || !sessionExpiresAt) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const diffSecs = Math.max(0, Math.floor((sessionExpiresAt - now) / 1000));
+      setSessionRemainingSecs(diffSecs);
+
+      if (diffSecs <= 0) {
+        clearInterval(timer);
+        handleLogout(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [token, sessionExpiresAt, handleLogout]);
+
+  // User Inactivity Extension (Debounced: extends session on user interaction)
+  useEffect(() => {
+    if (!token) return;
+
+    let lastInteraction = Date.now();
+    const handleUserInteraction = () => {
+      const now = Date.now();
+      if (now - lastInteraction > 45000) {
+        lastInteraction = now;
+        extendSession();
+      }
+    };
+
+    window.addEventListener('mousedown', handleUserInteraction, { passive: true });
+    window.addEventListener('keydown', handleUserInteraction, { passive: true });
+    window.addEventListener('touchstart', handleUserInteraction, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousedown', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+    };
+  }, [token, extendSession]);
+
   // Fetch Dashboard Stats & Scheduled Queue
   const fetchDashboardData = useCallback(async (authToken = token) => {
     if (!authToken) return;
@@ -193,11 +315,21 @@ export default function AdminDashboard() {
         })
       ]);
 
-      if (statsRes.status === 401) {
-        setToken('');
-        sessionStorage.removeItem('bingo_admin_token');
-        setAuthError('Session expired. Please log in again.');
+      if (statsRes.status === 401 || historyRes.status === 401) {
+        handleLogout(true);
         return;
+      }
+
+      // Check if server refreshed session expiration
+      const remainingHeader = statsRes.headers.get('x-admin-session-remaining');
+      if (remainingHeader) {
+        const remainingMs = parseInt(remainingHeader, 10);
+        if (!isNaN(remainingMs) && remainingMs > 0) {
+          const newExp = Date.now() + remainingMs;
+          setSessionExpiresAt(newExp);
+          setSessionRemainingSecs(Math.floor(remainingMs / 1000));
+          sessionStorage.setItem('bingo_admin_expires_at', String(newExp));
+        }
       }
 
       const statsData = await statsRes.json();
@@ -413,6 +545,11 @@ export default function AdminDashboard() {
 
       setToken(data.token);
       sessionStorage.setItem('bingo_admin_token', data.token);
+      if (data.expiresAt) {
+        setSessionExpiresAt(data.expiresAt);
+        setSessionRemainingSecs(Math.max(0, Math.floor((data.expiresAt - Date.now()) / 1000)));
+        sessionStorage.setItem('bingo_admin_expires_at', String(data.expiresAt));
+      }
       setPasswordInput('');
       fetchDashboardData(data.token);
     } catch {
@@ -420,19 +557,6 @@ export default function AdminDashboard() {
     } finally {
       setIsLoggingIn(false);
     }
-  }
-
-  // Handle Logout
-  function handleLogout() {
-    if (token) {
-      fetch('/api/admin/logout', {
-        method: 'POST',
-        headers: { 'x-admin-token': token }
-      }).catch(() => {});
-    }
-    setToken('');
-    sessionStorage.removeItem('bingo_admin_token');
-    setStats(null);
   }
 
   // Handle Push Send (Instant Broadcast or Scheduled for later)
@@ -647,6 +771,18 @@ export default function AdminDashboard() {
               <span className="admin-db-action">Connect Free SQL ⚡</span>
             </div>
           )}
+
+          {/* Real-time Session Expiration Badge */}
+          {sessionRemainingSecs > 0 && (
+            <div
+              className={`admin-session-badge ${sessionRemainingSecs < 180 ? 'warning' : ''}`}
+              onClick={extendSession}
+              title={`Admin session expires in ${formatSessionCountdown(sessionRemainingSecs)} of inactivity. Click or interact to extend session.`}
+            >
+              <ClockIcon size={13} color={sessionRemainingSecs < 180 ? '#f87171' : '#a5b4fc'} />
+              <span>Session: {formatSessionCountdown(sessionRemainingSecs)}</span>
+            </div>
+          )}
         </div>
 
         <div className="admin-header-actions">
@@ -697,7 +833,7 @@ export default function AdminDashboard() {
           <button
             type="button"
             className="admin-icon-btn admin-danger"
-            onClick={handleLogout}
+            onClick={() => handleLogout(false)}
             title="Logout"
             aria-label="Logout"
           >

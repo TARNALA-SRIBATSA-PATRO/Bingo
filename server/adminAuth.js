@@ -4,8 +4,14 @@ import { verifyPassword, setPassword, excludeAdminUser } from './analyticsStore.
 // Obfuscated Admin Path (customizable via env var or secure fallback)
 export const ADMIN_PATH = process.env.ADMIN_PATH || '/sys-admin-panel-92f7';
 
-// In-memory active admin sessions: token -> { createdAt, expiresAt, ip }
+// In-memory active admin sessions: token -> { createdAt, lastActivity, expiresAt, ip }
 const activeSessions = new Map();
+
+// Configurable Admin Session TTL (Default: 30 minutes for sensitive admin panel)
+const DEFAULT_SESSION_MINUTES = 30;
+const SESSION_TTL_MINUTES = parseInt(process.env.ADMIN_SESSION_TIMEOUT_MINUTES, 10) || DEFAULT_SESSION_MINUTES;
+const SESSION_TTL_MS = SESSION_TTL_MINUTES * 60 * 1000;
+const MAX_SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000; // Absolute maximum 12 hours
 
 // Helper to verify admin token
 export function verifyAdminToken(token) {
@@ -24,7 +30,6 @@ const loginAttempts = new Map();
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Helper to get client IP
 export function getClientIp(req) {
@@ -108,16 +113,49 @@ export function handleAdminLogin(req, res) {
 
   // Generate secure 256-bit session token
   const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = now + SESSION_TTL_MS;
   activeSessions.set(token, {
     createdAt: now,
-    expiresAt: now + SESSION_TTL_MS,
+    lastActivity: now,
+    expiresAt,
     ip
   });
 
   return res.json({
     success: true,
     token,
-    expiresIn: SESSION_TTL_MS
+    expiresIn: SESSION_TTL_MS,
+    expiresAt,
+    sessionTimeoutMinutes: SESSION_TTL_MINUTES
+  });
+}
+
+// Check Admin Session Status and Remaining Time
+export function handleAdminSessionCheck(req, res) {
+  const token = req.headers['x-admin-token'] || req.query.token;
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  const session = activeSessions.get(token);
+  if (!session) {
+    return res.status(401).json({ success: false, error: 'Session invalid or expired. Please sign in again.', expired: true });
+  }
+
+  const now = Date.now();
+  if (now > session.expiresAt) {
+    activeSessions.delete(token);
+    return res.status(401).json({ success: false, error: 'Session expired due to inactivity. Please sign in again.', expired: true });
+  }
+
+  const remainingMs = Math.max(0, session.expiresAt - now);
+  return res.json({
+    success: true,
+    valid: true,
+    remainingMs,
+    remainingSeconds: Math.ceil(remainingMs / 1000),
+    expiresAt: session.expiresAt,
+    sessionTimeoutMinutes: SESSION_TTL_MINUTES
   });
 }
 
@@ -158,13 +196,19 @@ export function requireAdminAuth(req, res, next) {
 
   const session = activeSessions.get(token);
   if (!session) {
-    return res.status(401).json({ success: false, error: 'Session invalid or expired. Please sign in again.' });
+    return res.status(401).json({ success: false, error: 'Session invalid or expired. Please sign in again.', expired: true });
   }
 
-  if (Date.now() > session.expiresAt) {
+  const now = Date.now();
+  if (now > session.expiresAt) {
     activeSessions.delete(token);
-    return res.status(401).json({ success: false, error: 'Session expired. Please sign in again.' });
+    return res.status(401).json({ success: false, error: 'Session expired due to inactivity. Please sign in again.', expired: true });
   }
+
+  // Slide expiration window on active request (capped by max session lifetime)
+  session.lastActivity = now;
+  session.expiresAt = Math.min(now + SESSION_TTL_MS, session.createdAt + MAX_SESSION_LIFETIME_MS);
+  res.setHeader('X-Admin-Session-Remaining', Math.max(0, session.expiresAt - now));
 
   next();
 }
