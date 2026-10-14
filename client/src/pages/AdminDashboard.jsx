@@ -235,8 +235,6 @@ export default function AdminDashboard() {
   const [isSavingAutoPilot, setIsSavingAutoPilot] = useState(false);
   const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
   const [customApiKeyInput, setCustomApiKeyInput] = useState('');
-  const [schedulingNotices, setSchedulingNotices] = useState([]);
-  const [sendAdvanceNoticeWithPush, setSendAdvanceNoticeWithPush] = useState(true);
 
   // Compute query dates based on rangeMode
   const queryParams = useMemo(() => {
@@ -359,7 +357,7 @@ export default function AdminDashboard() {
       if (queryParams.startDate) query.append('startDate', queryParams.startDate);
       if (queryParams.endDate) query.append('endDate', queryParams.endDate);
 
-      const [statsRes, historyRes, scheduledRes, autopilotRes, noticesRes] = await Promise.all([
+      const [statsRes, historyRes, scheduledRes, autopilotRes] = await Promise.all([
         fetch(`/api/admin/stats?${query.toString()}`, {
           headers: { 'x-admin-token': authToken }
         }),
@@ -370,9 +368,6 @@ export default function AdminDashboard() {
           headers: { 'x-admin-token': authToken }
         }),
         fetch('/api/admin/ai-push/autopilot', {
-          headers: { 'x-admin-token': authToken }
-        }).catch(() => null),
-        fetch('/api/admin/ai-push/notices', {
           headers: { 'x-admin-token': authToken }
         }).catch(() => null)
       ]);
@@ -404,15 +399,6 @@ export default function AdminDashboard() {
           if (apData.success && apData.config) {
             setAiAutoPilotConfig(apData.config);
             setCustomApiKeyInput(apData.config.geminiApiKey || '');
-          }
-        } catch {}
-      }
-
-      if (noticesRes && noticesRes.ok) {
-        try {
-          const nData = await noticesRes.json();
-          if (nData.success) {
-            setSchedulingNotices(nData.notices || []);
           }
         } catch {}
       }
@@ -532,22 +518,16 @@ export default function AdminDashboard() {
           title: sugg.title,
           message: sugg.message,
           url: sugg.url || '/lobby',
-          scheduledAt: sugg.scheduledAt,
-          broadcastAdvanceNotice: true
+          scheduledAt: sugg.scheduledAt
         })
       });
       const data = await res.json();
       if (data.success) {
         setPushFeedback({
           type: 'success',
-          text: `⚡ Campaign "${sugg.title}" scheduled for ${sugg.scheduledAtDesc || new Date(sugg.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}! Advance notice broadcast dispatched to subscribers.`
+          text: `⏰ Campaign "${sugg.title}" scheduled for ${sugg.scheduledAtDesc || new Date(sugg.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It will be sent directly at that time.`
         });
         fetchScheduledQueue();
-        const nRes = await fetch('/api/admin/ai-push/notices', { headers: { 'x-admin-token': token } });
-        if (nRes.ok) {
-          const nData = await nRes.json();
-          if (nData.success) setSchedulingNotices(nData.notices || []);
-        }
       } else {
         setPushFeedback({ type: 'error', text: data.error || 'Failed to auto-schedule notification' });
       }
@@ -808,8 +788,7 @@ export default function AdminDashboard() {
         message: pushMessage.trim(),
         url: pushUrl.trim() || '/lobby',
         ...(deliveryMode === 'scheduled' ? {
-          scheduledAt: new Date(scheduledDateTime).toISOString(),
-          broadcastAdvanceNotice: sendAdvanceNoticeWithPush
+          scheduledAt: new Date(scheduledDateTime).toISOString()
         } : {})
       };
 
@@ -827,7 +806,7 @@ export default function AdminDashboard() {
         if (deliveryMode === 'scheduled') {
           setPushFeedback({
             type: 'success',
-            text: `Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! ${sendAdvanceNoticeWithPush ? 'Advance scheduling heads-up was broadcast to subscribers.' : 'It will automatically broadcast at the specified time.'}`
+            text: `⏰ Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! It will broadcast directly to players at that time.`
           });
           setPushTitle('');
           setPushMessage('');
@@ -2124,34 +2103,6 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Advance Scheduling Notices Queue */}
-          {schedulingNotices && schedulingNotices.length > 0 && (
-            <div className="admin-notices-container">
-              <div className="admin-notices-header">
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>📢 Advance Scheduling Notices Dispatched ({schedulingNotices.length})</span>
-                </span>
-                <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
-                  Subscribers notified in advance of upcoming game sessions
-                </span>
-              </div>
-              <div>
-                {schedulingNotices.slice(0, 3).map((notice) => (
-                  <div key={notice.id} className="admin-notice-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                      <span className="admin-notice-badge">Notified ⚡</span>
-                      <span className="admin-notice-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {notice.title}
-                      </span>
-                    </div>
-                    <span className="admin-notice-time">
-                      Triggers: {notice.scheduledAtDesc}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Delivery Mode Selector */}
@@ -2197,20 +2148,11 @@ export default function AdminDashboard() {
                 onChange={(e) => setScheduledDateTime(e.target.value)}
                 required={deliveryMode === 'scheduled'}
               />
-              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  type="checkbox"
-                  id="sendAdvanceNoticeCheckbox"
-                  checked={sendAdvanceNoticeWithPush}
-                  onChange={(e) => setSendAdvanceNoticeWithPush(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#6366f1', cursor: 'pointer' }}
-                />
-                <label htmlFor="sendAdvanceNoticeCheckbox" style={{ fontSize: '0.82rem', color: '#cbd5e1', cursor: 'pointer' }}>
-                  📢 <strong>Send Advance Notice to subscribers now</strong> (alerts players that this match is scheduled for {scheduledDateTime ? new Date(scheduledDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'the specified time'})
-                </label>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '6px' }}>
-                ℹ️ When the scheduled time arrives, the server will automatically dispatch this push notification to all registered phones and record the event into Dispatched History.
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ClockIcon size={14} color="#facc15" />
+                <span>
+                  <strong>Direct Scheduled Dispatch:</strong> No advance reminder is sent to players now. The main message will fire automatically at the scheduled time.
+                </span>
               </div>
             </div>
           )}

@@ -76,7 +76,7 @@ for (const envCandidate of [
   }
 }
 
-const CURRENT_VERSION = '2.5.0';
+const CURRENT_VERSION = '2.5.1';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()
@@ -965,14 +965,13 @@ app.get('/api/admin/push/history', requireAdminAuth, (req, res) => {
 
 // Scheduled Push Notification Endpoints
 app.post('/api/admin/push/schedule', requireAdminAuth, async (req, res) => {
-  const { title, message, url, scheduledAt, broadcastAdvanceNotice } = req.body || {};
+  const { title, message, url, scheduledAt } = req.body || {};
   try {
     const result = await schedulePushNotification({
       title,
       message,
       url,
       scheduledAt,
-      broadcastAdvanceNotice: Boolean(broadcastAdvanceNotice),
       source: 'manual'
     });
     res.json({ success: true, scheduledItem: result.scheduledItem, notice: result.notice });
@@ -1018,14 +1017,13 @@ app.get('/api/admin/ai-push/suggestions', requireAdminAuth, async (req, res) => 
 });
 
 app.post('/api/admin/ai-push/auto-schedule', requireAdminAuth, async (req, res) => {
-  const { title, message, url, scheduledAt, broadcastAdvanceNotice } = req.body || {};
+  const { title, message, url, scheduledAt } = req.body || {};
   try {
     const result = await schedulePushNotification({
       title,
       message,
       url,
       scheduledAt,
-      broadcastAdvanceNotice: broadcastAdvanceNotice !== undefined ? Boolean(broadcastAdvanceNotice) : true,
       source: 'ai_studio'
     });
     res.json({ success: true, ...result });

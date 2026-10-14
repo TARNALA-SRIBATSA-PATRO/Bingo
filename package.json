@@ -1,6 +1,6 @@
 {
   "name": "bingo-multiplayer",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Multiplayer Bingo Game",
   "scripts": {
     "start": "cd server && npm start",

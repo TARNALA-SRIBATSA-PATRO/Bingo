@@ -631,7 +631,13 @@ export function recordSentNotification({ id, title, message, url, deliveredCount
 }
 
 export function getNotificationsHistory() {
-  return memoryStore.notificationsHistory || [];
+  const history = memoryStore.notificationsHistory || [];
+  // Exclude legacy reminder notices so the table strictly displays real delivered messages
+  return history.filter(item => {
+    if (!item || !item.title) return false;
+    if (item.title.startsWith('📅 Scheduled:')) return false;
+    return true;
+  });
 }
 
 // Get YYYY-MM-DD in Indian Standard Time (IST)
@@ -647,7 +653,12 @@ export function getTodayKeyIST(date = new Date()) {
 // Retrieve notifications sent today + recent history for AI anti-repetition memory
 export function getSentTodayAndRecent() {
   const todayKeyIST = getTodayKeyIST();
-  const history = memoryStore.notificationsHistory || [];
+  const rawHistory = memoryStore.notificationsHistory || [];
+  const history = rawHistory.filter(item => {
+    if (!item || !item.title) return false;
+    if (item.title.startsWith('📅 Scheduled:')) return false;
+    return true;
+  });
   const scheduled = memoryStore.scheduledNotifications || [];
 
   const sentTodayList = history.filter(item => {
@@ -692,7 +703,6 @@ export async function schedulePushNotification({
   message,
   url,
   scheduledAt,
-  broadcastAdvanceNotice = false,
   source = 'manual'
 }) {
   if (!title || !message) {
@@ -731,12 +741,12 @@ export async function schedulePushNotification({
   memoryStore.scheduledNotifications.push(item);
   memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
 
-  // Friendly date and time descriptors strictly formatted in Indian Standard Time (IST)
+  // Friendly date and time descriptors strictly formatted in Indian Standard Time (IST) for Admin Display
   const triggerDate = new Date(time);
   const timeDesc = formatTimeIST(triggerDate, true);
   const dateDesc = formatDateIST(triggerDate);
 
-  // Record an Advance Scheduling Notice
+  // Record an internal admin log record (for Admin Dashboard display only — NO push reminder is sent to players!)
   const notice = {
     id: `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     campaignId: schedId,
@@ -745,28 +755,11 @@ export async function schedulePushNotification({
     scheduledAtDesc: `${dateDesc} at ${timeDesc}`,
     message: item.message,
     source,
-    advanceNoticeSent: false,
     createdAt: Date.now()
   };
 
   if (!memoryStore.schedulingNotices) {
     memoryStore.schedulingNotices = [];
-  }
-
-  // If broadcastAdvanceNotice is requested, send an immediate advance alert to all subscribers
-  if (broadcastAdvanceNotice) {
-    try {
-      const advanceTitle = `📅 Scheduled: ${item.title}`;
-      const advanceBody = `⚡ Set for ${timeDesc} (${dateDesc}): ${item.message.slice(0, 75)}`;
-      await sendBroadcastPushNotification({
-        title: advanceTitle,
-        message: advanceBody,
-        url: item.url || '/lobby'
-      });
-      notice.advanceNoticeSent = true;
-    } catch (err) {
-      console.warn('[AnalyticsStore] Failed to send advance push notification:', err.message);
-    }
   }
 
   memoryStore.schedulingNotices.unshift(notice);
@@ -844,7 +837,6 @@ export async function processAiAutoPilotTick() {
         message: topPick.message,
         url: topPick.url || '/lobby',
         scheduledAt: triggerTime,
-        broadcastAdvanceNotice: true,
         source: 'ai_autopilot'
       });
 
@@ -1188,7 +1180,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.5.0',
+    version: '2.5.1',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
