@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bingo-pwa-v2.5.4';
+const CACHE_NAME = 'bingo-pwa-v2.5.5';
 
 const PRECACHE_ASSETS = [
   '/',

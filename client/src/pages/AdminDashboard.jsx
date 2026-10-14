@@ -2117,7 +2117,7 @@ export default function AdminDashboard() {
               <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ClockIcon size={14} color="#facc15" />
                 <span>
-                  <strong>Direct Scheduled Dispatch:</strong> No advance reminder is sent to players now. The main message will fire automatically at the scheduled time.
+                  The notification will be dispatched to all registered players automatically at the scheduled time.
                 </span>
               </div>
             </div>
@@ -2598,7 +2598,7 @@ export default function AdminDashboard() {
                   <div>
                     <strong style={{ color: '#f8fafc', fontSize: '0.94rem' }}>Automated Daily Peak Scheduling</strong>
                     <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
-                      When enabled, the server automatically crafts & schedules 1 optimal situation-aware campaign every day during peak player activity windows, complete with advance subscriber notices.
+                      When enabled, the server automatically crafts & schedules 1 optimal situation-aware campaign every day during peak player activity windows, dispatched directly at the target time.
                     </p>
                   </div>
                   <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '28px', flexShrink: 0, cursor: 'pointer' }}>

@@ -696,7 +696,7 @@ export function getSentTodayAndRecent() {
 }
 
 // -------------------------------------------------------------
-// SCHEDULED PUSH NOTIFICATIONS & ADVANCE NOTICES
+// SCHEDULED PUSH NOTIFICATIONS (DIRECT DISPATCH)
 // -------------------------------------------------------------
 export async function schedulePushNotification({
   title,
@@ -1153,7 +1153,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.5.4',
+    version: '2.5.5',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
