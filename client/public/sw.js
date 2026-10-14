@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bingo-pwa-v2.3.2';
+const CACHE_NAME = 'bingo-pwa-v2.3.3';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -12,7 +12,7 @@ const PRECACHE_ASSETS = [
   '/sounds/bgm-lobby%20and%20home.mp3'
 ];
 
-// 1. Install event: Precache core assets fresh from network and immediately activate
+// 1. Install event: Precache core assets in the background without interrupting active games
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
           .catch((err) => console.warn('[SW] Precache failed for:', url, err));
       });
       return Promise.all(cachePromises);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 

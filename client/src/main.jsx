@@ -9,13 +9,33 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Register Service Worker with automatic force-update detection
+// Helper to determine if it is safe to apply updates immediately
+function isSafeToUpdateNow() {
+  const path = window.location.pathname;
+  const isLobbyOrHome = path === '/' || path === '/lobby';
+  const isPlaying = Boolean(
+    window.__BINGO_IS_PLAYING__ ||
+    path === '/game' ||
+    path === '/board-setup'
+  );
+  return isLobbyOrHome && !isPlaying;
+}
+
+// Register Service Worker with safe update detection (only updates when in Lobby or Home)
 if ('serviceWorker' in navigator) {
   let refreshing = false;
 
-  // 1. When a new Service Worker takes control, reload immediately to apply the latest build
+  // 1. When a new Service Worker takes control, reload ONLY if player is in Lobby or Home
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (refreshing) return;
+    if (!isSafeToUpdateNow()) {
+      console.log('[PWA] New service worker took control, but user is in game/setup. Postponing reload until user enters lobby or home.');
+      window.__BINGO_PENDING_RELOAD__ = true;
+      try {
+        sessionStorage.setItem('bingo_pending_reload', '1');
+      } catch {}
+      return;
+    }
     refreshing = true;
     console.log('[PWA] New service worker took control, refreshing to apply update...');
     window.location.reload();
@@ -27,14 +47,27 @@ if ('serviceWorker' in navigator) {
       .then((reg) => {
         console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
 
-        // Immediate update check on load
+        // Update check on load
         reg.update().catch(() => {});
 
-        // Helper to prompt waiting workers to skip waiting immediately
+        // Helper to prompt waiting workers only when safe in lobby or home
         function monitorUpdates(registration) {
+          function maybeSkipWaiting(worker) {
+            if (!worker) return;
+            if (isSafeToUpdateNow()) {
+              console.log('[PWA] In lobby/home, prompting skipWaiting...');
+              worker.postMessage('skipWaiting');
+            } else {
+              console.log('[PWA] In game/setup, postponing skipWaiting until user enters lobby or home.');
+              window.__BINGO_PENDING_SW__ = true;
+              try {
+                sessionStorage.setItem('bingo_pending_sw', '1');
+              } catch {}
+            }
+          }
+
           if (registration.waiting) {
-            console.log('[PWA] New worker waiting, skipping waiting...');
-            registration.waiting.postMessage('skipWaiting');
+            maybeSkipWaiting(registration.waiting);
           }
 
           registration.addEventListener('updatefound', () => {
@@ -42,8 +75,7 @@ if ('serviceWorker' in navigator) {
             if (!installing) return;
             installing.addEventListener('statechange', () => {
               if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[PWA] New version installed, prompting skipWaiting...');
-                installing.postMessage('skipWaiting');
+                maybeSkipWaiting(installing);
               }
             });
           });
@@ -58,7 +90,7 @@ if ('serviceWorker' in navigator) {
           }
         }, 30000);
 
-        // Check for updates whenever the tab becomes visible/active
+        // Check for updates whenever tab becomes visible/active
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible' && navigator.onLine) {
             reg.update().catch(() => {});

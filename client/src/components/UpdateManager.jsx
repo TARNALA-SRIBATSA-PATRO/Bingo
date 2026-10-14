@@ -1,71 +1,139 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useGame } from '../context/GameContext';
 import './UpdateManager.css';
 
-const CURRENT_APP_VERSION = '2.3.2';
+const CURRENT_APP_VERSION = '2.3.3';
 
 export default function UpdateManager() {
+  const location = useLocation();
+  const { roomData } = useGame();
   const [updatingVersion, setUpdatingVersion] = useState(null);
+  const [pendingVersion, setPendingVersion] = useState(() => {
+    try {
+      return sessionStorage.getItem('bingo_pending_version') || null;
+    } catch {
+      return null;
+    }
+  });
 
+  const isApplyingUpdateRef = useRef(false);
+
+  // Updates must ONLY execute when user is on Lobby (/lobby) or Home (/)
+  // and is NOT actively playing, setting up board, or inside a match room.
+  const isLobbyOrHome = location.pathname === '/' || location.pathname === '/lobby';
+  const isPlayingOrInRoom = Boolean(
+    (roomData && roomData.id) ||
+    location.pathname === '/game' ||
+    location.pathname === '/board-setup'
+  );
+  const isSafeToUpdate = Boolean(isLobbyOrHome && !isPlayingOrInRoom);
+
+  // Synchronize global flags so service worker listeners in main.jsx know safe state
   useEffect(() => {
-    let active = true;
+    window.__BINGO_SAFE_TO_UPDATE__ = isSafeToUpdate;
+    window.__BINGO_IS_PLAYING__ = isPlayingOrInRoom;
+  }, [isSafeToUpdate, isPlayingOrInRoom]);
 
-    async function checkForUpdates() {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  // Execute the update: purge caches, signal Service Worker skipWaiting, and reload cleanly
+  const executeApplyUpdate = useCallback(async (versionToApply) => {
+    if (isApplyingUpdateRef.current) return;
+    isApplyingUpdateRef.current = true;
+    setUpdatingVersion(versionToApply || CURRENT_APP_VERSION);
 
+    try {
+      sessionStorage.removeItem('bingo_pending_version');
+      sessionStorage.removeItem('bingo_pending_reload');
+      sessionStorage.removeItem('bingo_pending_sw');
+    } catch {}
+
+    // 1. Purge all CacheStorage caches
+    if ('caches' in window) {
       try {
-        const res = await fetch(`/version.json?t=${Date.now()}`, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
-        });
-
-        if (!res.ok) return;
-        const data = await res.json();
-
-        if (data?.version && data.version !== CURRENT_APP_VERSION) {
-          console.log(`[UpdateManager] New version detected: ${data.version} (current: ${CURRENT_APP_VERSION}). Force updating...`);
-          if (!active) return;
-          setUpdatingVersion(data.version);
-
-          // 1. Purge all CacheStorage caches
-          if ('caches' in window) {
-            try {
-              const keys = await caches.keys();
-              await Promise.all(keys.map(k => caches.delete(k)));
-            } catch (e) {
-              console.warn('[UpdateManager] Error clearing caches:', e);
-            }
-          }
-
-          // 2. Trigger Service Worker update
-          if ('serviceWorker' in navigator) {
-            try {
-              const reg = await navigator.serviceWorker.getRegistration();
-              if (reg) {
-                if (reg.waiting) reg.waiting.postMessage('skipWaiting');
-                await reg.update();
-              }
-            } catch (e) {
-              console.warn('[UpdateManager] Error updating SW:', e);
-            }
-          }
-
-          // 3. Force reload page to fetch fresh bundles
-          setTimeout(() => {
-            window.location.reload(true);
-          }, 800);
-        }
-      } catch (err) {
-        // Network errors or offline mode
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch (e) {
+        console.warn('[UpdateManager] Error clearing caches:', e);
       }
     }
 
-    // Check immediately on load
+    // 2. Trigger Service Worker update and activate waiting worker
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          if (reg.waiting) reg.waiting.postMessage('skipWaiting');
+          await reg.update().catch(() => {});
+        }
+      } catch (e) {
+        console.warn('[UpdateManager] Error updating SW:', e);
+      }
+    }
+
+    // 3. Force reload page to fetch fresh bundles
+    setTimeout(() => {
+      window.location.reload(true);
+    }, 800);
+  }, []);
+
+  // When user enters Lobby or Home, check if an update was postponed during gameplay
+  useEffect(() => {
+    if (!isSafeToUpdate || isApplyingUpdateRef.current) return;
+
+    let targetVersion = pendingVersion;
+    if (!targetVersion) {
+      try {
+        targetVersion = sessionStorage.getItem('bingo_pending_version');
+      } catch {}
+    }
+
+    const hasPendingReload = Boolean(window.__BINGO_PENDING_RELOAD__);
+
+    if (targetVersion || hasPendingReload) {
+      console.log(`[UpdateManager] User entered ${location.pathname}. Starting postponed update to ${targetVersion || 'latest'}...`);
+      executeApplyUpdate(targetVersion || CURRENT_APP_VERSION);
+    }
+  }, [isSafeToUpdate, pendingVersion, location.pathname, executeApplyUpdate]);
+
+  // Check version.json endpoint for newer releases
+  const checkForUpdates = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (isApplyingUpdateRef.current) return;
+
+    try {
+      const res = await fetch(`/version.json?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data?.version && data.version !== CURRENT_APP_VERSION) {
+        console.log(`[UpdateManager] New version detected: ${data.version} (current: ${CURRENT_APP_VERSION})`);
+
+        if (isSafeToUpdate) {
+          console.log(`[UpdateManager] User is on ${location.pathname}. Updating now...`);
+          executeApplyUpdate(data.version);
+        } else {
+          console.log(`[UpdateManager] User is currently in game/room (${location.pathname}). Postponing update until user enters lobby or home.`);
+          setPendingVersion(data.version);
+          try {
+            sessionStorage.setItem('bingo_pending_version', data.version);
+          } catch {}
+        }
+      }
+    } catch {
+      // Network errors or offline mode
+    }
+  }, [isSafeToUpdate, location.pathname, executeApplyUpdate]);
+
+  // Periodic and lifecycle update checks
+  useEffect(() => {
     checkForUpdates();
 
-    // Check periodically every 30 seconds
     const interval = setInterval(checkForUpdates, 30000);
 
-    // Check when network reconnects or tab becomes visible
     const handleOnline = () => checkForUpdates();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkForUpdates();
@@ -86,13 +154,12 @@ export default function UpdateManager() {
     navigator.serviceWorker?.addEventListener('message', handleMessage);
 
     return () => {
-      active = false;
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibility);
       navigator.serviceWorker?.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [checkForUpdates]);
 
   if (!updatingVersion) return null;
 
