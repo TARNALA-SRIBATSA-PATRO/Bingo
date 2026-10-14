@@ -458,6 +458,11 @@
   height: 100%;
 }
 
+.admin-draw-bar {
+  background: #eab308;
+  height: 100%;
+}
+
 .admin-bot-bar {
   background: #ef4444;
   height: 100%;
@@ -466,6 +471,9 @@
 .admin-ratio-legend {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   font-size: 0.82rem;
   color: #94a3b8;
   margin-top: 8px;

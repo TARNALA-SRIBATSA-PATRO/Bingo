@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   define: {
-    __APP_VERSION__: JSON.stringify('2.4.0'),
+    __APP_VERSION__: JSON.stringify('2.4.1'),
     __BUILD_TIMESTAMP__: JSON.stringify(Date.now().toString()),
   },
   server: {

@@ -31,9 +31,9 @@ const defaultState = {
   dailyUniqueUsers: {}, // { 'YYYY-MM-DD': [userIds] }
   botStats: {
     totalMatches: 0,
-    beginner: { total: 0, userWins: 0, botWins: 0 },
-    intermediate: { total: 0, userWins: 0, botWins: 0 },
-    pro: { total: 0, userWins: 0, botWins: 0 }
+    beginner: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+    intermediate: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+    pro: { total: 0, userWins: 0, botWins: 0, draws: 0 }
   },
   multiplayerStats: {
     roomsCreated: 0,
@@ -78,6 +78,7 @@ async function loadStore() {
         scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
+      recomputeAggregatedBotStats();
       console.log('[AnalyticsStore] Local cache loaded from disk.');
     } catch (e) {
       console.warn('[AnalyticsStore] Error reading local analytics cache:', e);
@@ -256,9 +257,9 @@ function getTodayKey(date = new Date()) {
 // Re-aggregate global bot stats from all users' persistent lifetime profiles
 export function recomputeAggregatedBotStats() {
   const aggregated = {
-    beginner: { total: 0, userWins: 0, botWins: 0 },
-    intermediate: { total: 0, userWins: 0, botWins: 0 },
-    pro: { total: 0, userWins: 0, botWins: 0 }
+    beginner: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+    intermediate: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+    pro: { total: 0, userWins: 0, botWins: 0, draws: 0 }
   };
 
   for (const user of Object.values(memoryStore.users || {})) {
@@ -266,9 +267,15 @@ export function recomputeAggregatedBotStats() {
       for (const diff of ['beginner', 'intermediate', 'pro']) {
         const d = user.botStats[diff];
         if (d) {
-          aggregated[diff].total += (d.total || 0);
-          aggregated[diff].userWins += (d.userWins || 0);
-          aggregated[diff].botWins += (d.botWins || 0);
+          const tot = d.total || 0;
+          const uW = d.userWins || 0;
+          const bW = d.botWins || 0;
+          const drw = d.draws !== undefined ? d.draws : Math.max(0, tot - uW - bW);
+
+          aggregated[diff].total += tot;
+          aggregated[diff].userWins += uW;
+          aggregated[diff].botWins += bW;
+          aggregated[diff].draws += drw;
         }
       }
     }
@@ -276,11 +283,18 @@ export function recomputeAggregatedBotStats() {
 
   for (const diff of ['beginner', 'intermediate', 'pro']) {
     if (!memoryStore.botStats[diff]) {
-      memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0 };
+      memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0, draws: 0 };
     }
-    memoryStore.botStats[diff].total = Math.max(memoryStore.botStats[diff].total || 0, aggregated[diff].total);
-    memoryStore.botStats[diff].userWins = Math.max(memoryStore.botStats[diff].userWins || 0, aggregated[diff].userWins);
-    memoryStore.botStats[diff].botWins = Math.max(memoryStore.botStats[diff].botWins || 0, aggregated[diff].botWins);
+    const curTot = Math.max(memoryStore.botStats[diff].total || 0, aggregated[diff].total);
+    const curU = Math.max(memoryStore.botStats[diff].userWins || 0, aggregated[diff].userWins);
+    const curB = Math.max(memoryStore.botStats[diff].botWins || 0, aggregated[diff].botWins);
+    const rawDraws = Math.max(memoryStore.botStats[diff].draws || 0, aggregated[diff].draws);
+    const curDraws = Math.max(rawDraws, Math.max(0, curTot - curU - curB));
+
+    memoryStore.botStats[diff].total = curTot;
+    memoryStore.botStats[diff].userWins = curU;
+    memoryStore.botStats[diff].botWins = curB;
+    memoryStore.botStats[diff].draws = curDraws;
   }
 
   const computedTotal = (memoryStore.botStats.beginner?.total || 0) + (memoryStore.botStats.intermediate?.total || 0) + (memoryStore.botStats.pro?.total || 0);
@@ -409,14 +423,23 @@ export function recordBotGame({ userId, difficulty, winner, lifetimeStats }) {
     recomputeAggregatedBotStats();
   } else {
     memoryStore.botStats.totalMatches = (memoryStore.botStats.totalMatches || 0) + 1;
-    const diffStats = memoryStore.botStats[diffKey] || { total: 0, userWins: 0, botWins: 0 };
+    const diffStats = memoryStore.botStats[diffKey] || { total: 0, userWins: 0, botWins: 0, draws: 0 };
     diffStats.total = (diffStats.total || 0) + 1;
 
     if (winner === 'user') {
       diffStats.userWins = (diffStats.userWins || 0) + 1;
     } else if (winner === 'bot') {
       diffStats.botWins = (diffStats.botWins || 0) + 1;
+    } else if (winner === 'tie' || winner === 'draw') {
+      diffStats.draws = (diffStats.draws || 0) + 1;
     }
+
+    const dTot = diffStats.total || 0;
+    const dU = diffStats.userWins || 0;
+    const dB = diffStats.botWins || 0;
+    diffStats.draws = diffStats.draws !== undefined
+      ? Math.max(diffStats.draws, Math.max(0, dTot - dU - dB))
+      : Math.max(0, dTot - dU - dB);
 
     memoryStore.botStats[diffKey] = diffStats;
 
@@ -665,34 +688,36 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
 
   // Bot Statistics & Win Ratios
   const botStats = memoryStore.botStats;
-  const calcWinRate = (userWins, total) => {
+  const calcRate = (count, total) => {
     if (!total || total === 0) return 0;
-    return Math.round((userWins / total) * 1000) / 10;
+    return Math.round((count / total) * 1000) / 10;
+  };
+
+  const getDiffStats = (diff) => {
+    const total = botStats[diff]?.total || 0;
+    const userWins = botStats[diff]?.userWins || 0;
+    const botWins = botStats[diff]?.botWins || 0;
+    const rawDraws = botStats[diff]?.draws !== undefined
+      ? botStats[diff].draws
+      : Math.max(0, total - userWins - botWins);
+    const draws = Math.max(rawDraws, Math.max(0, total - userWins - botWins));
+
+    return {
+      total,
+      userWins,
+      botWins,
+      draws,
+      userWinRate: calcRate(userWins, total),
+      botWinRate: calcRate(botWins, total),
+      drawRate: calcRate(draws, total)
+    };
   };
 
   const botOverview = {
     totalMatches: botStats.totalMatches || 0,
-    beginner: {
-      total: botStats.beginner?.total || 0,
-      userWins: botStats.beginner?.userWins || 0,
-      botWins: botStats.beginner?.botWins || 0,
-      userWinRate: calcWinRate(botStats.beginner?.userWins, botStats.beginner?.total),
-      botWinRate: calcWinRate(botStats.beginner?.botWins, botStats.beginner?.total)
-    },
-    intermediate: {
-      total: botStats.intermediate?.total || 0,
-      userWins: botStats.intermediate?.userWins || 0,
-      botWins: botStats.intermediate?.botWins || 0,
-      userWinRate: calcWinRate(botStats.intermediate?.userWins, botStats.intermediate?.total),
-      botWinRate: calcWinRate(botStats.intermediate?.botWins, botStats.intermediate?.total)
-    },
-    pro: {
-      total: botStats.pro?.total || 0,
-      userWins: botStats.pro?.userWins || 0,
-      botWins: botStats.pro?.botWins || 0,
-      userWinRate: calcWinRate(botStats.pro?.userWins, botStats.pro?.total),
-      botWinRate: calcWinRate(botStats.pro?.botWins, botStats.pro?.total)
-    }
+    beginner: getDiffStats('beginner'),
+    intermediate: getDiffStats('intermediate'),
+    pro: getDiffStats('pro')
   };
 
   return {
@@ -782,7 +807,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.0',
+    version: '2.4.1',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
@@ -813,11 +838,14 @@ export function restoreBackupData(backupData) {
       const src = backupData.botStats[diff];
       if (src) {
         if (!memoryStore.botStats[diff]) {
-          memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0 };
+          memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0, draws: 0 };
         }
         memoryStore.botStats[diff].total = Math.max(memoryStore.botStats[diff].total || 0, src.total || 0);
         memoryStore.botStats[diff].userWins = Math.max(memoryStore.botStats[diff].userWins || 0, src.userWins || 0);
         memoryStore.botStats[diff].botWins = Math.max(memoryStore.botStats[diff].botWins || 0, src.botWins || 0);
+        const srcDraws = src.draws !== undefined ? src.draws : Math.max(0, (src.total || 0) - (src.userWins || 0) - (src.botWins || 0));
+        const curDraws = Math.max(memoryStore.botStats[diff].draws || 0, srcDraws);
+        memoryStore.botStats[diff].draws = Math.max(curDraws, Math.max(0, memoryStore.botStats[diff].total - memoryStore.botStats[diff].userWins - memoryStore.botStats[diff].botWins));
       }
     }
     const computedTotal = (memoryStore.botStats.beginner?.total || 0) + (memoryStore.botStats.intermediate?.total || 0) + (memoryStore.botStats.pro?.total || 0);

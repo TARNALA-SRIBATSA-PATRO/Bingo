@@ -1028,13 +1028,17 @@ export default function AdminDashboard() {
             </div>
             <div className="admin-ratio-bars">
               <div className="admin-ratio-bar-wrapper">
-                <div className="admin-user-bar" style={{ width: `${botOverview.beginner?.userWinRate || 0}%` }} />
-                <div className="admin-bot-bar" style={{ width: `${botOverview.beginner?.botWinRate || 0}%` }} />
+                <div className="admin-user-bar" style={{ width: `${botOverview.beginner?.userWinRate || 0}%` }} title={`User Wins: ${botOverview.beginner?.userWinRate || 0}%`} />
+                <div className="admin-draw-bar" style={{ width: `${botOverview.beginner?.drawRate || 0}%` }} title={`Draws: ${botOverview.beginner?.drawRate || 0}%`} />
+                <div className="admin-bot-bar" style={{ width: `${botOverview.beginner?.botWinRate || 0}%` }} title={`Bot Wins: ${botOverview.beginner?.botWinRate || 0}%`} />
               </div>
             </div>
             <div className="admin-ratio-legend">
               <span style={{ color: '#4ade80' }}>
                 User Wins: {botOverview.beginner?.userWins || 0} ({botOverview.beginner?.userWinRate || 0}%)
+              </span>
+              <span style={{ color: '#facc15', fontWeight: 600 }}>
+                Draws: {botOverview.beginner?.draws || 0} ({botOverview.beginner?.drawRate || 0}%)
               </span>
               <span style={{ color: '#f87171' }}>
                 Bot Wins: {botOverview.beginner?.botWins || 0} ({botOverview.beginner?.botWinRate || 0}%)
@@ -1052,13 +1056,17 @@ export default function AdminDashboard() {
             </div>
             <div className="admin-ratio-bars">
               <div className="admin-ratio-bar-wrapper">
-                <div className="admin-user-bar" style={{ width: `${botOverview.intermediate?.userWinRate || 0}%` }} />
-                <div className="admin-bot-bar" style={{ width: `${botOverview.intermediate?.botWinRate || 0}%` }} />
+                <div className="admin-user-bar" style={{ width: `${botOverview.intermediate?.userWinRate || 0}%` }} title={`User Wins: ${botOverview.intermediate?.userWinRate || 0}%`} />
+                <div className="admin-draw-bar" style={{ width: `${botOverview.intermediate?.drawRate || 0}%` }} title={`Draws: ${botOverview.intermediate?.drawRate || 0}%`} />
+                <div className="admin-bot-bar" style={{ width: `${botOverview.intermediate?.botWinRate || 0}%` }} title={`Bot Wins: ${botOverview.intermediate?.botWinRate || 0}%`} />
               </div>
             </div>
             <div className="admin-ratio-legend">
               <span style={{ color: '#4ade80' }}>
                 User Wins: {botOverview.intermediate?.userWins || 0} ({botOverview.intermediate?.userWinRate || 0}%)
+              </span>
+              <span style={{ color: '#facc15', fontWeight: 600 }}>
+                Draws: {botOverview.intermediate?.draws || 0} ({botOverview.intermediate?.drawRate || 0}%)
               </span>
               <span style={{ color: '#f87171' }}>
                 Bot Wins: {botOverview.intermediate?.botWins || 0} ({botOverview.intermediate?.botWinRate || 0}%)
@@ -1076,13 +1084,17 @@ export default function AdminDashboard() {
             </div>
             <div className="admin-ratio-bars">
               <div className="admin-ratio-bar-wrapper">
-                <div className="admin-user-bar" style={{ width: `${botOverview.pro?.userWinRate || 0}%` }} />
-                <div className="admin-bot-bar" style={{ width: `${botOverview.pro?.botWinRate || 0}%` }} />
+                <div className="admin-user-bar" style={{ width: `${botOverview.pro?.userWinRate || 0}%` }} title={`User Wins: ${botOverview.pro?.userWinRate || 0}%`} />
+                <div className="admin-draw-bar" style={{ width: `${botOverview.pro?.drawRate || 0}%` }} title={`Draws: ${botOverview.pro?.drawRate || 0}%`} />
+                <div className="admin-bot-bar" style={{ width: `${botOverview.pro?.botWinRate || 0}%` }} title={`Bot Wins: ${botOverview.pro?.botWinRate || 0}%`} />
               </div>
             </div>
             <div className="admin-ratio-legend">
               <span style={{ color: '#4ade80' }}>
                 User Wins: {botOverview.pro?.userWins || 0} ({botOverview.pro?.userWinRate || 0}%)
+              </span>
+              <span style={{ color: '#facc15', fontWeight: 600 }}>
+                Draws: {botOverview.pro?.draws || 0} ({botOverview.pro?.drawRate || 0}%)
               </span>
               <span style={{ color: '#f87171' }}>
                 Bot Wins: {botOverview.pro?.botWins || 0} ({botOverview.pro?.botWinRate || 0}%)

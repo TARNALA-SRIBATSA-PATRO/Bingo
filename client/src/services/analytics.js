@@ -6,20 +6,39 @@ const LIFETIME_STATS_KEY = '_b_lifetime_bot_stats';
 
 // Retrieve or initialize the device's persistent lifetime bot statistics
 export function getLifetimeBotStats() {
+  let stats = null;
   try {
     const raw = localStorage.getItem(LIFETIME_STATS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') stats = parsed;
     }
   } catch {}
 
-  return {
-    totalMatches: 0,
-    beginner: { total: 0, userWins: 0, botWins: 0 },
-    intermediate: { total: 0, userWins: 0, botWins: 0 },
-    pro: { total: 0, userWins: 0, botWins: 0 }
-  };
+  if (!stats) {
+    stats = {
+      totalMatches: 0,
+      beginner: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+      intermediate: { total: 0, userWins: 0, botWins: 0, draws: 0 },
+      pro: { total: 0, userWins: 0, botWins: 0, draws: 0 }
+    };
+  }
+
+  // Ensure all difficulties have draws populated even from older app versions
+  for (const diff of ['beginner', 'intermediate', 'pro']) {
+    if (!stats[diff]) {
+      stats[diff] = { total: 0, userWins: 0, botWins: 0, draws: 0 };
+    } else {
+      const curTot = stats[diff].total || 0;
+      const curU = stats[diff].userWins || 0;
+      const curB = stats[diff].botWins || 0;
+      stats[diff].draws = stats[diff].draws !== undefined
+        ? Math.max(stats[diff].draws, Math.max(0, curTot - curU - curB))
+        : Math.max(0, curTot - curU - curB);
+    }
+  }
+
+  return stats;
 }
 
 // Record bot match in the client's permanent localStorage vault
@@ -28,7 +47,7 @@ export function recordLocalBotMatch(difficulty, winner) {
   const diffKey = ['beginner', 'intermediate', 'pro'].includes(difficulty) ? difficulty : 'pro';
 
   if (!stats[diffKey]) {
-    stats[diffKey] = { total: 0, userWins: 0, botWins: 0 };
+    stats[diffKey] = { total: 0, userWins: 0, botWins: 0, draws: 0 };
   }
 
   stats.totalMatches = (stats.totalMatches || 0) + 1;
@@ -38,7 +57,17 @@ export function recordLocalBotMatch(difficulty, winner) {
     stats[diffKey].userWins = (stats[diffKey].userWins || 0) + 1;
   } else if (winner === 'bot') {
     stats[diffKey].botWins = (stats[diffKey].botWins || 0) + 1;
+  } else if (winner === 'tie' || winner === 'draw') {
+    stats[diffKey].draws = (stats[diffKey].draws || 0) + 1;
   }
+
+  // Ensure draws is synchronized with total - wins
+  const curTot = stats[diffKey].total || 0;
+  const curU = stats[diffKey].userWins || 0;
+  const curB = stats[diffKey].botWins || 0;
+  stats[diffKey].draws = stats[diffKey].draws !== undefined
+    ? Math.max(stats[diffKey].draws, Math.max(0, curTot - curU - curB))
+    : Math.max(0, curTot - curU - curB);
 
   try {
     localStorage.setItem(LIFETIME_STATS_KEY, JSON.stringify(stats));
