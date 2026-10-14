@@ -36,10 +36,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.1';
+const CURRENT_VERSION = '2.4.2';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791969000000
+  buildTime: 1791970000000
 });
 
 const app = express();
