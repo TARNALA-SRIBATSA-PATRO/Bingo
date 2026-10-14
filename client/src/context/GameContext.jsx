@@ -11,7 +11,7 @@ import {
   getBotNextMove, 
   checkBingoLines 
 } from '../utils/botEngine';
-import { trackBotGame } from '../services/analytics';
+import { trackBotGame, trackPushConversion } from '../services/analytics';
 
 const GameContext = createContext(null);
 
@@ -146,6 +146,7 @@ export function GameProvider({ children }) {
     socket.on('game:over', ({ winners, gameHistory }) => {
       if (roomData?.isBot) return;
       setGameOver({ winners, gameHistory });
+      trackPushConversion();
     });
 
     socket.on('player:left', ({ name }) => {
@@ -460,6 +461,7 @@ export function GameProvider({ children }) {
       const playingRoom = {
         ...roomData,
         status: 'playing',
+        matchStartTime: Date.now(),
         players: [userPlayer, botPlayer],
         turnOrder,
         currentTurnIndex: 0,
@@ -587,10 +589,14 @@ export function GameProvider({ children }) {
         if (userWon && !botWon) winnerResult = 'user';
         else if (botWon && !userWon) winnerResult = 'bot';
 
+        const durationMs = roomData.matchStartTime ? (Date.now() - roomData.matchStartTime) : null;
+
         trackBotGame({
           difficulty: roomData.difficulty || 'pro',
-          winner: winnerResult
+          winner: winnerResult,
+          durationMs
         });
+        trackPushConversion();
 
         const gameHistoryEntry = {
           gameIndex: roomData.currentGameIndex,

@@ -31,17 +31,30 @@ const defaultState = {
   dailyUniqueUsers: {}, // { 'YYYY-MM-DD': [userIds] }
   botStats: {
     totalMatches: 0,
+    totalDurationMs: 0,
+    matchesWithDuration: 0,
     beginner: { total: 0, userWins: 0, botWins: 0, draws: 0 },
     intermediate: { total: 0, userWins: 0, botWins: 0, draws: 0 },
     pro: { total: 0, userWins: 0, botWins: 0, draws: 0 }
   },
   multiplayerStats: {
     roomsCreated: 0,
-    matchesCompleted: 0
+    matchesCompleted: 0,
+    totalDurationMs: 0,
+    matchesWithDuration: 0,
+    totalPlayerSlots: 0,
+    roomsSampledForSize: 0
   },
   pushSubscriptions: {}, // { [endpoint]: { subscription, userId, createdAt } }
-  notificationsHistory: [], // [ { id, title, message, url, sentAt, deliveredCount, failedCount } ]
+  notificationsHistory: [], // [ { id, title, message, url, sentAt, deliveredCount, failedCount, clicksCount, conversionsCount } ]
   scheduledNotifications: [], // [ { id, title, message, url, scheduledAt, createdAt, status } ]
+  pushFunnel: {
+    promptsShown: 0,
+    promptsGranted: 0,
+    promptsDenied: 0,
+    totalClicks: 0,
+    totalConversions: 0
+  },
   adminSecurity: {
     passwordHash: null,
     passwordSalt: null,
@@ -75,6 +88,7 @@ async function loadStore() {
         ...parsed,
         botStats: { ...defaultState.botStats, ...(parsed.botStats || {}) },
         multiplayerStats: { ...defaultState.multiplayerStats, ...(parsed.multiplayerStats || {}) },
+        pushFunnel: { ...defaultState.pushFunnel, ...(parsed.pushFunnel || {}) },
         scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
@@ -126,6 +140,7 @@ async function loadStore() {
         if (dbRows.push_subscriptions) memoryStore.pushSubscriptions = { ...memoryStore.pushSubscriptions, ...dbRows.push_subscriptions };
         if (dbRows.notifications_history) memoryStore.notificationsHistory = Array.isArray(dbRows.notifications_history) ? dbRows.notifications_history : [];
         if (dbRows.scheduled_notifications) memoryStore.scheduledNotifications = Array.isArray(dbRows.scheduled_notifications) ? dbRows.scheduled_notifications : [];
+        if (dbRows.push_funnel) memoryStore.pushFunnel = { ...defaultState.pushFunnel, ...dbRows.push_funnel };
         if (dbRows.admin_security && dbRows.admin_security.passwordHash) {
           memoryStore.adminSecurity = { ...defaultState.adminSecurity, ...dbRows.admin_security };
         }
@@ -144,6 +159,7 @@ async function loadStore() {
           push_subscriptions: memoryStore.pushSubscriptions,
           notifications_history: memoryStore.notificationsHistory,
           scheduled_notifications: memoryStore.scheduledNotifications,
+          push_funnel: memoryStore.pushFunnel,
           admin_security: memoryStore.adminSecurity
         });
       }
@@ -172,7 +188,7 @@ async function flushStore() {
     try {
       const keys = dirtyDbKeys.size > 0
         ? Array.from(dirtyDbKeys)
-        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'admin_security'];
+        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'push_funnel', 'admin_security'];
       dirtyDbKeys.clear();
 
       for (const k of keys) {
@@ -184,6 +200,7 @@ async function flushStore() {
         else if (k === 'push_subscriptions') await saveKeyToDatabase('push_subscriptions', memoryStore.pushSubscriptions);
         else if (k === 'notifications_history') await saveKeyToDatabase('notifications_history', memoryStore.notificationsHistory);
         else if (k === 'scheduled_notifications') await saveKeyToDatabase('scheduled_notifications', memoryStore.scheduledNotifications);
+        else if (k === 'push_funnel') await saveKeyToDatabase('push_funnel', memoryStore.pushFunnel);
         else if (k === 'admin_security') await saveKeyToDatabase('admin_security', memoryStore.adminSecurity);
       }
     } catch (err) {
@@ -403,8 +420,13 @@ export function recordInstall({ userId }) {
 }
 
 // Record Bot Match
-export function recordBotGame({ userId, difficulty, winner, lifetimeStats }) {
+export function recordBotGame({ userId, difficulty, winner, lifetimeStats, durationMs }) {
   const diffKey = ['beginner', 'intermediate', 'pro'].includes(difficulty) ? difficulty : 'pro';
+
+  if (typeof durationMs === 'number' && durationMs > 1000 && durationMs < 3600000) {
+    memoryStore.botStats.totalDurationMs = (memoryStore.botStats.totalDurationMs || 0) + durationMs;
+    memoryStore.botStats.matchesWithDuration = (memoryStore.botStats.matchesWithDuration || 0) + 1;
+  }
 
   if (lifetimeStats && userId) {
     if (!memoryStore.users[userId]) {
@@ -448,7 +470,7 @@ export function recordBotGame({ userId, difficulty, winner, lifetimeStats }) {
     }
   }
 
-  scheduleFlush();
+  scheduleFlush('bot_stats');
 }
 
 // Batch Sync Offline Events
@@ -461,7 +483,8 @@ export function syncOfflineEvents(events = []) {
       recordBotGame({
         userId: ev.userId,
         difficulty: ev.difficulty,
-        winner: ev.winner
+        winner: ev.winner,
+        durationMs: ev.durationMs
       });
       count++;
     } else if (ev.type === 'install') {
@@ -478,12 +501,20 @@ export function syncOfflineEvents(events = []) {
 // Record Multiplayer Event
 export function recordMultiplayerRoomCreated() {
   memoryStore.multiplayerStats.roomsCreated = (memoryStore.multiplayerStats.roomsCreated || 0) + 1;
-  scheduleFlush();
+  scheduleFlush('multiplayer_stats');
 }
 
-export function recordMultiplayerGameCompleted() {
+export function recordMultiplayerGameCompleted({ durationMs, playerCount } = {}) {
   memoryStore.multiplayerStats.matchesCompleted = (memoryStore.multiplayerStats.matchesCompleted || 0) + 1;
-  scheduleFlush();
+  if (typeof durationMs === 'number' && durationMs > 1000 && durationMs < 3600000) {
+    memoryStore.multiplayerStats.totalDurationMs = (memoryStore.multiplayerStats.totalDurationMs || 0) + durationMs;
+    memoryStore.multiplayerStats.matchesWithDuration = (memoryStore.multiplayerStats.matchesWithDuration || 0) + 1;
+  }
+  if (typeof playerCount === 'number' && playerCount >= 2 && playerCount <= 4) {
+    memoryStore.multiplayerStats.totalPlayerSlots = (memoryStore.multiplayerStats.totalPlayerSlots || 0) + playerCount;
+    memoryStore.multiplayerStats.roomsSampledForSize = (memoryStore.multiplayerStats.roomsSampledForSize || 0) + 1;
+  }
+  scheduleFlush('multiplayer_stats');
 }
 
 // Push Subscriptions
@@ -494,14 +525,14 @@ export function savePushSubscription({ userId, subscription }) {
     userId: userId || null,
     createdAt: Date.now()
   };
-  scheduleFlush();
+  scheduleFlush('push_subscriptions');
   return true;
 }
 
 export function removePushSubscription(endpoint) {
   if (endpoint && memoryStore.pushSubscriptions[endpoint]) {
     delete memoryStore.pushSubscriptions[endpoint];
-    scheduleFlush();
+    scheduleFlush('push_subscriptions');
   }
 }
 
@@ -509,22 +540,71 @@ export function getPushSubscriptionsList() {
   return Object.values(memoryStore.pushSubscriptions || {});
 }
 
+// Push Prompt Funnel Tracker (shown / granted / denied)
+export function recordPushPrompt({ status }) {
+  if (!memoryStore.pushFunnel) {
+    memoryStore.pushFunnel = { ...defaultState.pushFunnel };
+  }
+  if (status === 'shown') {
+    memoryStore.pushFunnel.promptsShown = (memoryStore.pushFunnel.promptsShown || 0) + 1;
+  } else if (status === 'granted') {
+    memoryStore.pushFunnel.promptsGranted = (memoryStore.pushFunnel.promptsGranted || 0) + 1;
+  } else if (status === 'denied') {
+    memoryStore.pushFunnel.promptsDenied = (memoryStore.pushFunnel.promptsDenied || 0) + 1;
+  }
+  scheduleFlush('push_funnel');
+}
+
+// Push Click Tracker (tracks when recipient clicks notification)
+export function recordPushClick({ pushId, userId }) {
+  if (!memoryStore.pushFunnel) {
+    memoryStore.pushFunnel = { ...defaultState.pushFunnel };
+  }
+  memoryStore.pushFunnel.totalClicks = (memoryStore.pushFunnel.totalClicks || 0) + 1;
+  if (pushId && Array.isArray(memoryStore.notificationsHistory)) {
+    const item = memoryStore.notificationsHistory.find(n => n.id === pushId);
+    if (item) {
+      item.clicksCount = (item.clicksCount || 0) + 1;
+    }
+  }
+  scheduleFlush('push_funnel');
+  scheduleFlush('notifications_history');
+}
+
+// Push Conversion Tracker (tracks when push clicker actually plays a game)
+export function recordPushConvert({ pushId, userId }) {
+  if (!memoryStore.pushFunnel) {
+    memoryStore.pushFunnel = { ...defaultState.pushFunnel };
+  }
+  memoryStore.pushFunnel.totalConversions = (memoryStore.pushFunnel.totalConversions || 0) + 1;
+  if (pushId && Array.isArray(memoryStore.notificationsHistory)) {
+    const item = memoryStore.notificationsHistory.find(n => n.id === pushId);
+    if (item) {
+      item.conversionsCount = (item.conversionsCount || 0) + 1;
+    }
+  }
+  scheduleFlush('push_funnel');
+  scheduleFlush('notifications_history');
+}
+
 // Record Sent Notification
-export function recordSentNotification({ title, message, url, deliveredCount, failedCount }) {
+export function recordSentNotification({ id, title, message, url, deliveredCount, failedCount }) {
   const record = {
-    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     title,
     message,
     url: url || '/',
     sentAt: Date.now(),
     deliveredCount: deliveredCount || 0,
-    failedCount: failedCount || 0
+    failedCount: failedCount || 0,
+    clicksCount: 0,
+    conversionsCount: 0
   };
   memoryStore.notificationsHistory.unshift(record);
   if (memoryStore.notificationsHistory.length > 100) {
     memoryStore.notificationsHistory = memoryStore.notificationsHistory.slice(0, 100);
   }
-  scheduleFlush();
+  scheduleFlush('notifications_history');
   return record;
 }
 
@@ -747,6 +827,58 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
     pro: getDiffStats('pro')
   };
 
+  // Match durations and room size
+  const avgBotDurationSeconds = (botStats.matchesWithDuration && botStats.matchesWithDuration > 0)
+    ? Math.round((botStats.totalDurationMs || 0) / botStats.matchesWithDuration / 1000)
+    : 0;
+
+  const avgMultiplayerDurationSeconds = (memoryStore.multiplayerStats?.matchesWithDuration && memoryStore.multiplayerStats.matchesWithDuration > 0)
+    ? Math.round((memoryStore.multiplayerStats.totalDurationMs || 0) / memoryStore.multiplayerStats.matchesWithDuration / 1000)
+    : 0;
+
+  const avgRoomSize = (memoryStore.multiplayerStats?.roomsSampledForSize && memoryStore.multiplayerStats.roomsSampledForSize > 0)
+    ? Math.round(((memoryStore.multiplayerStats.totalPlayerSlots || 0) / memoryStore.multiplayerStats.roomsSampledForSize) * 10) / 10
+    : (memoryStore.multiplayerStats?.roomsCreated > 0 ? 2.0 : 0);
+
+  // Push funnel analytics
+  const funnel = memoryStore.pushFunnel || {
+    promptsShown: 0,
+    promptsGranted: 0,
+    promptsDenied: 0,
+    totalClicks: 0,
+    totalConversions: 0
+  };
+
+  const totalPushSubscribers = Object.keys(memoryStore.pushSubscriptions || {}).length;
+  const optInRate = funnel.promptsShown > 0
+    ? Math.round((funnel.promptsGranted / funnel.promptsShown) * 1000) / 10
+    : (totalPushSubscribers > 0 ? 100 : 0);
+
+  const totalDeliveredAcrossHistory = (memoryStore.notificationsHistory || []).reduce(
+    (acc, item) => acc + (item.deliveredCount || 0),
+    0
+  );
+
+  const overallCtr = totalDeliveredAcrossHistory > 0
+    ? Math.round((funnel.totalClicks / totalDeliveredAcrossHistory) * 1000) / 10
+    : 0;
+
+  const overallConversionRate = funnel.totalClicks > 0
+    ? Math.round((funnel.totalConversions / funnel.totalClicks) * 1000) / 10
+    : 0;
+
+  const pushFunnelStats = {
+    promptsShown: funnel.promptsShown || 0,
+    promptsGranted: funnel.promptsGranted || 0,
+    promptsDenied: funnel.promptsDenied || 0,
+    optInRate,
+    totalClicks: funnel.totalClicks || 0,
+    totalConversions: funnel.totalConversions || 0,
+    overallCtr,
+    overallConversionRate,
+    totalDelivered: totalDeliveredAcrossHistory
+  };
+
   return {
     overview: {
       totalUsers,
@@ -758,14 +890,19 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
       peakHourPings: peakHourCount,
       activeInRangeUsers,
       percentageChange,
-      totalPushSubscribers: Object.keys(memoryStore.pushSubscriptions || {}).length,
+      totalPushSubscribers,
       totalRoomsCreated: memoryStore.multiplayerStats?.roomsCreated || 0,
-      totalMatchesCompleted: memoryStore.multiplayerStats?.matchesCompleted || 0
+      totalMatchesCompleted: memoryStore.multiplayerStats?.matchesCompleted || 0,
+      avgBotDurationSeconds,
+      avgMultiplayerDurationSeconds,
+      avgRoomSize,
+      pushFunnel: pushFunnelStats
     },
     todayHourlyActivity: todayHourly,
     activityTimeline: timelineDays,
     botOverview,
     multiplayerStats: memoryStore.multiplayerStats,
+    pushFunnel: pushFunnelStats,
     persistenceStatus: {
       type: isDbConnected() ? 'postgres' : 'ephemeral',
       isConnected: isDbConnected(),
@@ -787,7 +924,10 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
     };
   }
 
+  const pushId = `push_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const payload = JSON.stringify({
+    id: pushId,
+    pushId,
     title: title || 'Bingo Alert!',
     body: message || 'Check out what is new in Bingo!',
     icon: '/icons/icon-192.png',
@@ -815,6 +955,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
   await Promise.allSettled(pushPromises);
 
   const historyRecord = recordSentNotification({
+    id: pushId,
     title,
     message,
     url,
@@ -834,7 +975,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.6',
+    version: '2.4.7',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
@@ -843,7 +984,8 @@ export function getBackupPayload() {
     multiplayerStats: memoryStore.multiplayerStats,
     pushSubscriptions: memoryStore.pushSubscriptions,
     notificationsHistory: memoryStore.notificationsHistory,
-    scheduledNotifications: memoryStore.scheduledNotifications || []
+    scheduledNotifications: memoryStore.scheduledNotifications || [],
+    pushFunnel: memoryStore.pushFunnel || defaultState.pushFunnel
   };
 }
 
@@ -928,6 +1070,16 @@ export function restoreBackupData(backupData) {
     );
   }
 
+  // 7. Merge push funnel
+  if (backupData.pushFunnel && typeof backupData.pushFunnel === 'object') {
+    if (!memoryStore.pushFunnel) memoryStore.pushFunnel = { ...defaultState.pushFunnel };
+    memoryStore.pushFunnel.promptsShown = Math.max(memoryStore.pushFunnel.promptsShown || 0, backupData.pushFunnel.promptsShown || 0);
+    memoryStore.pushFunnel.promptsGranted = Math.max(memoryStore.pushFunnel.promptsGranted || 0, backupData.pushFunnel.promptsGranted || 0);
+    memoryStore.pushFunnel.promptsDenied = Math.max(memoryStore.pushFunnel.promptsDenied || 0, backupData.pushFunnel.promptsDenied || 0);
+    memoryStore.pushFunnel.totalClicks = Math.max(memoryStore.pushFunnel.totalClicks || 0, backupData.pushFunnel.totalClicks || 0);
+    memoryStore.pushFunnel.totalConversions = Math.max(memoryStore.pushFunnel.totalConversions || 0, backupData.pushFunnel.totalConversions || 0);
+  }
+
   // Re-aggregate and flush to disk
   recomputeAggregatedBotStats();
   flushToDisk();
@@ -943,6 +1095,7 @@ export function restoreBackupData(backupData) {
       push_subscriptions: memoryStore.pushSubscriptions,
       notifications_history: memoryStore.notificationsHistory,
       scheduled_notifications: memoryStore.scheduledNotifications,
+      push_funnel: memoryStore.pushFunnel,
       admin_security: memoryStore.adminSecurity
     }).catch(err => console.error('[Restore] PostgreSQL sync error:', err.message));
   }

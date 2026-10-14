@@ -197,7 +197,7 @@ export async function syncOfflineQueue() {
 }
 
 // Record Bot match completion (persists in permanent localStorage vault and syncs to server)
-export async function trackBotGame({ difficulty, winner }) {
+export async function trackBotGame({ difficulty, winner, durationMs }) {
   const userId = getOrCreateSecretUserId();
   const lifetimeStats = recordLocalBotMatch(difficulty, winner);
 
@@ -206,6 +206,7 @@ export async function trackBotGame({ difficulty, winner }) {
     userId,
     difficulty,
     winner,
+    durationMs: typeof durationMs === 'number' ? durationMs : undefined,
     lifetimeStats,
     timestamp: Date.now()
   };
@@ -225,6 +226,22 @@ export async function trackBotGame({ difficulty, winner }) {
   } catch {
     queueOfflineEvent(payload);
   }
+}
+
+// Track downstream game play conversion if user entered via a push notification
+export async function trackPushConversion() {
+  if (typeof window === 'undefined') return;
+  try {
+    const pushRef = sessionStorage.getItem('bingo_opened_via_push');
+    if (!pushRef) return;
+    sessionStorage.removeItem('bingo_opened_via_push');
+    const userId = getOrCreateSecretUserId();
+    await fetch(`/api/analytics/push-convert?id=${encodeURIComponent(pushRef)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, timestamp: Date.now() })
+    });
+  } catch {}
 }
 
 // Check push capabilities and current permission status
@@ -251,7 +268,23 @@ export async function registerPushNotifications() {
   }
 
   try {
+    // If permission not determined yet, record prompt shown
+    if (Notification.permission === 'default') {
+      fetch('/api/analytics/push-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'shown' })
+      }).catch(() => {});
+    }
+
     const permission = await Notification.requestPermission();
+
+    fetch('/api/analytics/push-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: permission === 'granted' ? 'granted' : 'denied' })
+    }).catch(() => {});
+
     if (permission !== 'granted') {
       return { supported: true, granted: false, error: 'Permission denied' };
     }
@@ -294,6 +327,19 @@ export async function registerPushNotifications() {
 export function initAnalytics() {
   if (typeof window === 'undefined') return () => {};
   if (isCurrentSessionAdmin()) return () => {};
+
+  // Detect and capture push_ref query param if opened from a notification click
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const pushRef = params.get('push_ref');
+    if (pushRef) {
+      sessionStorage.setItem('bingo_opened_via_push', pushRef);
+      params.delete('push_ref');
+      const cleanSearch = params.toString() ? `?${params.toString()}` : '';
+      const cleanUrl = window.location.pathname + cleanSearch + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  } catch {}
 
   getOrCreateSecretUserId();
   sendHeartbeat();

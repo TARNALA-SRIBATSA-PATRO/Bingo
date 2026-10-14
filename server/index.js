@@ -23,7 +23,10 @@ import {
   getScheduledNotifications,
   cancelScheduledNotification,
   updateScheduledNotification,
-  excludeAdminUser
+  excludeAdminUser,
+  recordPushPrompt,
+  recordPushClick,
+  recordPushConvert
 } from './analyticsStore.js';
 import {
   handleAdminLogin,
@@ -38,10 +41,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.6';
+const CURRENT_VERSION = '2.4.7';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791974000000
+  buildTime: 1791974400000
 });
 
 const app = express();
@@ -308,6 +311,9 @@ function checkSinglePlayerWin(room, ioInstance) {
       winners: [{ name: lastPlayer.name, id: lastPlayer.id }]
     });
 
+    const durationMs = room.matchStartTime ? (Date.now() - room.matchStartTime) : null;
+    recordMultiplayerGameCompleted({ durationMs, playerCount: 2 });
+
     broadcastRoom(room);
     ioInstance.to(room.id).emit('game:over', {
       winners: [{ name: lastPlayer.name, id: lastPlayer.id, wins: lastPlayer.wins }],
@@ -520,6 +526,7 @@ io.on('connection', (socket) => {
     room.currentTurnIndex = 0;
     room.calledNumbers = [];
     room.calledHistory = [];
+    room.matchStartTime = Date.now();
 
     cb({ success: true });
     broadcastRoom(room);
@@ -571,12 +578,15 @@ io.on('connection', (socket) => {
         room.gameHistory.shift();
       }
 
+      const durationMs = room.matchStartTime ? (Date.now() - room.matchStartTime) : null;
+      const playerCount = Object.keys(room.players || {}).length;
+      recordMultiplayerGameCompleted({ durationMs, playerCount });
+
       broadcastRoom(room);
       io.to(roomId).emit('game:over', {
         winners: winners.map(w => ({ name: w.name, id: w.id, wins: w.wins })),
         gameHistory: room.gameHistory
       });
-      recordMultiplayerGameCompleted();
       return cb({ success: true });
     }
 
@@ -850,8 +860,28 @@ app.post('/api/analytics/event', (req, res) => {
 });
 
 app.post('/api/analytics/bot-game', (req, res) => {
-  const { userId, difficulty, winner, lifetimeStats } = req.body || {};
-  recordBotGame({ userId, difficulty, winner, lifetimeStats });
+  const { userId, difficulty, winner, lifetimeStats, durationMs } = req.body || {};
+  recordBotGame({ userId, difficulty, winner, lifetimeStats, durationMs });
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/push-click', (req, res) => {
+  const pushId = req.query.id || req.body?.pushId;
+  const userId = req.body?.userId;
+  recordPushClick({ pushId, userId });
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/push-convert', (req, res) => {
+  const pushId = req.query.id || req.body?.pushId;
+  const userId = req.body?.userId;
+  recordPushConvert({ pushId, userId });
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/push-prompt', (req, res) => {
+  const { status } = req.body || {};
+  recordPushPrompt({ status });
   res.json({ success: true });
 });
 

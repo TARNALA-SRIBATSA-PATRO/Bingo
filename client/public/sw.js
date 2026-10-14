@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bingo-pwa-v2.4.6';
+const CACHE_NAME = 'bingo-pwa-v2.4.7';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -140,13 +140,17 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || 'Bingo Online';
+  const pushId = data.pushId || data.id || null;
   const options = {
     body: data.body || 'Open Bingo to play now!',
     icon: data.icon || '/icons/icon-192.png',
     badge: '/favicon.svg',
-    data: { url: data.url || '/' },
+    data: {
+      url: data.url || '/',
+      pushId: pushId
+    },
     vibrate: [200, 100, 200],
-    tag: `bingo-push-${Date.now()}`
+    tag: `bingo-push-${pushId || Date.now()}`
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -155,12 +159,29 @@ self.addEventListener('push', (event) => {
 // 6. Handle notification click
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const pushId = event.notification.data?.pushId;
+  const baseUrl = event.notification.data?.url || '/';
+
+  let targetUrl = baseUrl;
+  if (pushId) {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    targetUrl = `${targetUrl}${separator}push_ref=${encodeURIComponent(pushId)}`;
+
+    // Immediate ping to backend to record push click
+    fetch(`/api/analytics/push-click?id=${encodeURIComponent(pushId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timestamp: Date.now() })
+    }).catch(() => {});
+  }
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url && 'focus' in client) {
+          if ('navigate' in client && targetUrl) {
+            client.navigate(targetUrl).catch(() => {});
+          }
           return client.focus();
         }
       }
