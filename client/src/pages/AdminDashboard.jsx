@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { getOrCreateSecretUserId } from '../services/analytics';
 import './AdminDashboard.css';
 
 // SVG Icons
-const LockIcon = ({ size = 20 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const LockIcon = ({ size = 20, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </svg>
@@ -16,7 +17,6 @@ const ClockIcon = ({ size = 20, color = "#f59e0b" }) => (
   </svg>
 );
 
-
 const UsersIcon = ({ size = 20, color = "#6366f1" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -26,11 +26,34 @@ const UsersIcon = ({ size = 20, color = "#6366f1" }) => (
   </svg>
 );
 
-const DownloadIcon = ({ size = 20, color = "#22c55e" }) => (
+const DownloadIcon = ({ size = 20, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     <polyline points="7 10 12 15 17 10" />
     <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const UploadIcon = ({ size = 20, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+const LogoutIcon = ({ size = 20, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+);
+
+const TrashIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 );
 
@@ -61,13 +84,11 @@ const TrophyIcon = ({ size = 20, color = "#eab308" }) => (
   </svg>
 );
 
-const RefreshIcon = ({ size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const RefreshIcon = ({ size = 16, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
   </svg>
 );
-
-import { getOrCreateSecretUserId } from '../services/analytics';
 
 export default function AdminDashboard() {
   // Mark session as admin so this device is never counted as an active player
@@ -631,21 +652,21 @@ export default function AdminDashboard() {
         <div className="admin-header-actions">
           <button
             type="button"
-            className="admin-btn admin-btn-secondary"
+            className="admin-icon-btn"
             onClick={handleExportBackup}
             title="Download complete database backup JSON"
-            style={{ width: 'auto' }}
+            aria-label="Export database backup"
           >
-            <span>📥 Export</span>
+            <DownloadIcon size={18} color="#38bdf8" />
           </button>
           <button
             type="button"
-            className="admin-btn admin-btn-secondary"
+            className="admin-icon-btn"
             onClick={() => fileInputRef.current?.click()}
             title="Restore database backup JSON"
-            style={{ width: 'auto' }}
+            aria-label="Import database backup"
           >
-            <span>📤 Import</span>
+            <UploadIcon size={18} color="#818cf8" />
           </button>
           <input
             type="file"
@@ -656,30 +677,31 @@ export default function AdminDashboard() {
           />
           <button
             type="button"
-            className="admin-btn admin-btn-secondary"
+            className="admin-icon-btn"
             onClick={() => fetchDashboardData()}
             disabled={isLoading}
-            style={{ width: 'auto' }}
+            title={isLoading ? 'Syncing data...' : 'Refresh dashboard'}
+            aria-label="Refresh dashboard"
           >
-            <RefreshIcon size={14} />
-            <span>{isLoading ? 'Syncing...' : 'Refresh'}</span>
+            <RefreshIcon size={18} className={isLoading ? 'admin-spin' : ''} />
           </button>
           <button
             type="button"
-            className="admin-btn admin-btn-secondary"
+            className="admin-icon-btn"
             onClick={() => setShowPasswordModal(true)}
-            style={{ width: 'auto' }}
+            title="Admin Security & Password Settings"
+            aria-label="Security Settings"
           >
-            <LockIcon size={14} />
-            <span>Security</span>
+            <LockIcon size={18} color="#facc15" />
           </button>
           <button
             type="button"
-            className="admin-btn admin-btn-secondary"
+            className="admin-icon-btn admin-danger"
             onClick={handleLogout}
-            style={{ width: 'auto', color: '#f87171' }}
+            title="Logout"
+            aria-label="Logout"
           >
-            <span>Logout</span>
+            <LogoutIcon size={18} color="#f87171" />
           </button>
         </div>
       </header>
@@ -1453,10 +1475,11 @@ export default function AdminDashboard() {
           <button
             type="button"
             onClick={fetchScheduledQueue}
-            className="admin-refresh-btn"
+            className="admin-icon-btn admin-refresh-btn"
             title="Refresh scheduled queue"
+            aria-label="Refresh scheduled queue"
           >
-            <RefreshIcon size={14} />
+            <RefreshIcon size={16} />
           </button>
         </div>
 
@@ -1496,10 +1519,13 @@ export default function AdminDashboard() {
                     <td>
                       <button
                         type="button"
-                        className="admin-cancel-btn"
+                        className="admin-icon-btn admin-danger"
                         onClick={() => handleCancelScheduled(item.id)}
+                        title="Cancel scheduled notification"
+                        aria-label="Cancel scheduled notification"
+                        style={{ width: '32px', height: '32px' }}
                       >
-                        Cancel
+                        <TrashIcon size={14} color="#f87171" />
                       </button>
                     </td>
                   </tr>
@@ -1510,7 +1536,18 @@ export default function AdminDashboard() {
         </div>
 
         {/* Notification History Log Table */}
-        <h4 style={{ margin: '28px 0 12px', fontSize: '1rem', color: '#f1f5f9' }}>Dispatched Notification History</h4>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '28px 0 12px' }}>
+          <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9' }}>Dispatched Notification History</h4>
+          <button
+            type="button"
+            onClick={fetchDashboardData}
+            className="admin-icon-btn admin-refresh-btn"
+            title="Refresh notification history"
+            aria-label="Refresh notification history"
+          >
+            <RefreshIcon size={16} />
+          </button>
+        </div>
 
         <div className="admin-table-wrapper">
           <table className="admin-table">
