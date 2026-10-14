@@ -1,10 +1,38 @@
 import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const { Pool } = pg;
 
 let pool = null;
 let isConnected = false;
 let dbError = null;
+
+// Read local .env if process.env.DATABASE_URL is not set
+function getDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  try {
+    const envPaths = [
+      path.join(__dirname, '.env'),
+      path.join(__dirname, '..', '.env')
+    ];
+    for (const p of envPaths) {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf8');
+        const match = raw.match(/^DATABASE_URL=["']?([^"'\r\n]+)["']?/m);
+        if (match && match[1]) {
+          process.env.DATABASE_URL = match[1].trim();
+          return process.env.DATABASE_URL;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
 
 export function isDbConnected() {
   return isConnected;
@@ -15,7 +43,7 @@ export function getDbError() {
 }
 
 export async function initDatabase() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = getDatabaseUrl();
   if (!databaseUrl) {
     console.log('[Database] Notice: DATABASE_URL not detected. Running in local filesystem mode.');
     return { connected: false, reason: 'NO_DATABASE_URL' };
