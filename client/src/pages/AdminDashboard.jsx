@@ -57,6 +57,13 @@ const TrashIcon = ({ size = 16, color = "currentColor" }) => (
   </svg>
 );
 
+const EditIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
 const BellIcon = ({ size = 20, color = "#f59e0b" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -181,6 +188,15 @@ export default function AdminDashboard() {
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [pwdFeedback, setPwdFeedback] = useState(null);
+
+  // Edit Scheduled Notification State
+  const [editingScheduled, setEditingScheduled] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editMessage, setEditMessage] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editDateTime, setEditDateTime] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFeedback, setEditFeedback] = useState(null);
 
   // Compute query dates based on rangeMode
   const queryParams = useMemo(() => {
@@ -641,6 +657,63 @@ export default function AdminDashboard() {
       }
     } catch {
       alert('Network error while canceling scheduled notification.');
+    }
+  }
+
+  // Open Edit Scheduled Notification Modal
+  function handleOpenEditScheduled(item) {
+    setEditingScheduled(item);
+    setEditTitle(item.title);
+    setEditMessage(item.message);
+    setEditUrl(item.url || '/lobby');
+    setEditDateTime(new Date(item.scheduledAt - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    setEditFeedback(null);
+  }
+
+  // Save Edited Scheduled Notification
+  async function handleSaveEditScheduled(e) {
+    e.preventDefault();
+    if (!editingScheduled || !editTitle.trim() || !editMessage.trim()) return;
+
+    const scheduledMs = new Date(editDateTime).getTime();
+    if (isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+      setEditFeedback({ type: 'error', text: 'Please select a future date and time for the scheduled trigger.' });
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditFeedback(null);
+
+    try {
+      const res = await fetch(`/api/admin/push/scheduled/${editingScheduled.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          message: editMessage.trim(),
+          url: editUrl.trim() || '/lobby',
+          scheduledAt: new Date(editDateTime).toISOString()
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.scheduledItem) {
+        setScheduledList((prev) =>
+          prev
+            .map((item) => (item.id === editingScheduled.id ? data.scheduledItem : item))
+            .sort((a, b) => a.scheduledAt - b.scheduledAt)
+        );
+        setEditingScheduled(null);
+      } else {
+        setEditFeedback({ type: 'error', text: data.error || 'Failed to update scheduled notification.' });
+      }
+    } catch {
+      setEditFeedback({ type: 'error', text: 'Network error updating scheduled notification.' });
+    } finally {
+      setIsSavingEdit(false);
     }
   }
 
@@ -1653,16 +1726,28 @@ export default function AdminDashboard() {
                       </span>
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="admin-icon-btn admin-danger"
-                        onClick={() => handleCancelScheduled(item.id)}
-                        title="Cancel scheduled notification"
-                        aria-label="Cancel scheduled notification"
-                        style={{ width: '32px', height: '32px' }}
-                      >
-                        <TrashIcon size={14} color="#f87171" />
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="admin-icon-btn admin-edit-btn"
+                          onClick={() => handleOpenEditScheduled(item)}
+                          title="Edit scheduled notification"
+                          aria-label="Edit scheduled notification"
+                          style={{ width: '32px', height: '32px' }}
+                        >
+                          <EditIcon size={14} color="#38bdf8" />
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-icon-btn admin-danger"
+                          onClick={() => handleCancelScheduled(item.id)}
+                          title="Cancel scheduled notification"
+                          aria-label="Cancel scheduled notification"
+                          style={{ width: '32px', height: '32px' }}
+                        >
+                          <TrashIcon size={14} color="#f87171" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1854,6 +1939,104 @@ export default function AdminDashboard() {
                 Got It!
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Scheduled Notification Modal */}
+      {editingScheduled && (
+        <div className="admin-modal-overlay" onClick={() => setEditingScheduled(null)}>
+          <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <EditIcon size={18} color="#38bdf8" />
+                <span>Edit Scheduled Notification</span>
+              </h3>
+              <button
+                type="button"
+                className="admin-icon-btn"
+                onClick={() => setEditingScheduled(null)}
+                title="Close"
+                aria-label="Close"
+                style={{ width: '32px', height: '32px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {editFeedback && (
+              <div className={`admin-push-status ${editFeedback.type}`} style={{ marginBottom: '14px' }}>
+                {editFeedback.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditScheduled}>
+              <div className="admin-form-group">
+                <label>Scheduled Trigger Time (Your Local Timezone)</label>
+                <input
+                  type="datetime-local"
+                  className="admin-input"
+                  value={editDateTime}
+                  min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                  onChange={(e) => setEditDateTime(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Notification Title</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="e.g. Friendly Afternoon Break! ☕"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Target URL Action</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="/lobby"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Notification Body Message</label>
+                <textarea
+                  className="admin-push-textarea"
+                  rows="3"
+                  placeholder="Message to display on player devices..."
+                  value={editMessage}
+                  onChange={(e) => setEditMessage(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => setEditingScheduled(null)}
+                  style={{ width: 'auto' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary"
+                  style={{ width: 'auto' }}
+                  disabled={isSavingEdit || !editTitle.trim() || !editMessage.trim()}
+                >
+                  {isSavingEdit ? 'Saving Changes...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -22,6 +22,7 @@ import {
   schedulePushNotification,
   getScheduledNotifications,
   cancelScheduledNotification,
+  updateScheduledNotification,
   excludeAdminUser
 } from './analyticsStore.js';
 import {
@@ -37,10 +38,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.5';
+const CURRENT_VERSION = '2.4.6';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791973000000
+  buildTime: 1791974000000
 });
 
 const app = express();
@@ -915,6 +916,15 @@ app.get('/api/admin/push/scheduled', requireAdminAuth, (req, res) => {
 app.delete('/api/admin/push/scheduled/:id', requireAdminAuth, (req, res) => {
   const cancelled = cancelScheduledNotification(req.params.id);
   res.json({ success: cancelled });
+});
+
+app.put('/api/admin/push/scheduled/:id', requireAdminAuth, (req, res) => {
+  const { title, message, url, scheduledAt } = req.body || {};
+  const updated = updateScheduledNotification(req.params.id, { title, message, url, scheduledAt });
+  if (!updated) {
+    return res.status(404).json({ success: false, error: 'Scheduled notification not found or cannot be modified.' });
+  }
+  res.json({ success: true, scheduledItem: updated });
 });
 
 // Admin Analytics Vault Backup & Restore Endpoints

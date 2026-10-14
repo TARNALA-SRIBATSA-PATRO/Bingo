@@ -583,6 +583,33 @@ export function cancelScheduledNotification(id) {
   return false;
 }
 
+export function updateScheduledNotification(id, { title, message, url, scheduledAt }) {
+  if (!id || !memoryStore.scheduledNotifications) return null;
+  const item = memoryStore.scheduledNotifications.find(n => n.id === id);
+  if (!item || item.status !== 'pending') return null;
+
+  if (title !== undefined && typeof title === 'string' && title.trim()) {
+    item.title = title.trim();
+  }
+  if (message !== undefined && typeof message === 'string' && message.trim()) {
+    item.message = message.trim();
+  }
+  if (url !== undefined && typeof url === 'string') {
+    item.url = url.trim() || '/lobby';
+  }
+  if (scheduledAt !== undefined) {
+    const timeMs = new Date(scheduledAt).getTime();
+    if (!isNaN(timeMs) && timeMs > Date.now()) {
+      item.scheduledAt = timeMs;
+    }
+  }
+
+  item.updatedAt = Date.now();
+  memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
+  scheduleFlush();
+  return item;
+}
+
 // Process any pending scheduled push notifications that have become due
 export async function processDueScheduledNotifications() {
   if (!memoryStore.scheduledNotifications || memoryStore.scheduledNotifications.length === 0) return;
@@ -807,7 +834,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.5',
+    version: '2.4.6',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

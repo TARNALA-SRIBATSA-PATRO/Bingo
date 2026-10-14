@@ -843,4 +843,18 @@
   animation: adminPulse 1.8s infinite;
 }
 
+/* Specific styling for table row edit icon button */
+.admin-icon-btn.admin-edit-btn {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.admin-icon-btn.admin-edit-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+}
+
 
