@@ -26,7 +26,11 @@ import {
   excludeAdminUser,
   recordPushPrompt,
   recordPushClick,
-  recordPushConvert
+  recordPushConvert,
+  getSchedulingNotices,
+  getAiAutoPilotConfig,
+  updateAiAutoPilotConfig,
+  generateSmartNotificationCampaign
 } from './analyticsStore.js';
 import {
   handleAdminLogin,
@@ -41,10 +45,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.7';
+const CURRENT_VERSION = '2.4.8';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791974400000
+  buildTime: Date.now()
 });
 
 const app = express();
@@ -929,11 +933,18 @@ app.get('/api/admin/push/history', requireAdminAuth, (req, res) => {
 });
 
 // Scheduled Push Notification Endpoints
-app.post('/api/admin/push/schedule', requireAdminAuth, (req, res) => {
-  const { title, message, url, scheduledAt } = req.body || {};
+app.post('/api/admin/push/schedule', requireAdminAuth, async (req, res) => {
+  const { title, message, url, scheduledAt, broadcastAdvanceNotice } = req.body || {};
   try {
-    const scheduledItem = schedulePushNotification({ title, message, url, scheduledAt });
-    res.json({ success: true, scheduledItem });
+    const result = await schedulePushNotification({
+      title,
+      message,
+      url,
+      scheduledAt,
+      broadcastAdvanceNotice: Boolean(broadcastAdvanceNotice),
+      source: 'manual'
+    });
+    res.json({ success: true, scheduledItem: result.scheduledItem, notice: result.notice });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -955,6 +966,53 @@ app.put('/api/admin/push/scheduled/:id', requireAdminAuth, (req, res) => {
     return res.status(404).json({ success: false, error: 'Scheduled notification not found or cannot be modified.' });
   }
   res.json({ success: true, scheduledItem: updated });
+});
+
+// AI Contextual Campaign Engine & Auto-Pilot Endpoints
+app.get('/api/admin/ai-push/suggestions', requireAdminAuth, async (req, res) => {
+  try {
+    const stats = getAdminDashboardStats();
+    const config = getAiAutoPilotConfig();
+    const campaign = await generateSmartNotificationCampaign({
+      stats,
+      apiKey: config?.geminiApiKey
+    });
+    res.json({ success: true, ...campaign });
+  } catch (err) {
+    console.error('[Admin] Error generating AI push suggestions:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/ai-push/auto-schedule', requireAdminAuth, async (req, res) => {
+  const { title, message, url, scheduledAt, broadcastAdvanceNotice } = req.body || {};
+  try {
+    const result = await schedulePushNotification({
+      title,
+      message,
+      url,
+      scheduledAt,
+      broadcastAdvanceNotice: broadcastAdvanceNotice !== undefined ? Boolean(broadcastAdvanceNotice) : true,
+      source: 'ai_studio'
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/admin/ai-push/autopilot', requireAdminAuth, (req, res) => {
+  res.json({ success: true, config: getAiAutoPilotConfig() });
+});
+
+app.post('/api/admin/ai-push/autopilot', requireAdminAuth, (req, res) => {
+  const { enabled, geminiApiKey } = req.body || {};
+  const config = updateAiAutoPilotConfig({ enabled, geminiApiKey });
+  res.json({ success: true, config });
+});
+
+app.get('/api/admin/ai-push/notices', requireAdminAuth, (req, res) => {
+  res.json({ success: true, notices: getSchedulingNotices() });
 });
 
 // Admin Analytics Vault Backup & Restore Endpoints

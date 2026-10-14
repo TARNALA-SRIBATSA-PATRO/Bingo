@@ -11,6 +11,8 @@ import {
   saveKeyToDatabase,
   saveMultipleKeysToDatabase
 } from './db.js';
+import { generateSmartNotificationCampaign, getContextualMatrix } from './aiNotificationEngine.js';
+export { generateSmartNotificationCampaign, getContextualMatrix };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +50,13 @@ const defaultState = {
   pushSubscriptions: {}, // { [endpoint]: { subscription, userId, createdAt } }
   notificationsHistory: [], // [ { id, title, message, url, sentAt, deliveredCount, failedCount, clicksCount, conversionsCount } ]
   scheduledNotifications: [], // [ { id, title, message, url, scheduledAt, createdAt, status } ]
+  aiAutoPilot: {
+    enabled: false,
+    lastScheduledDate: null,
+    lastRunAt: null,
+    geminiApiKey: null
+  },
+  schedulingNotices: [], // [ { id, campaignId, title, scheduledAt, scheduledAtDesc, message, advanceNoticeSent, createdAt } ]
   pushFunnel: {
     promptsShown: 0,
     promptsGranted: 0,
@@ -90,6 +99,8 @@ async function loadStore() {
         multiplayerStats: { ...defaultState.multiplayerStats, ...(parsed.multiplayerStats || {}) },
         pushFunnel: { ...defaultState.pushFunnel, ...(parsed.pushFunnel || {}) },
         scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
+        aiAutoPilot: { ...defaultState.aiAutoPilot, ...(parsed.aiAutoPilot || {}) },
+        schedulingNotices: Array.isArray(parsed.schedulingNotices) ? parsed.schedulingNotices : [],
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
       recomputeAggregatedBotStats();
@@ -141,6 +152,8 @@ async function loadStore() {
         if (dbRows.notifications_history) memoryStore.notificationsHistory = Array.isArray(dbRows.notifications_history) ? dbRows.notifications_history : [];
         if (dbRows.scheduled_notifications) memoryStore.scheduledNotifications = Array.isArray(dbRows.scheduled_notifications) ? dbRows.scheduled_notifications : [];
         if (dbRows.push_funnel) memoryStore.pushFunnel = { ...defaultState.pushFunnel, ...dbRows.push_funnel };
+        if (dbRows.ai_auto_pilot) memoryStore.aiAutoPilot = { ...defaultState.aiAutoPilot, ...dbRows.ai_auto_pilot };
+        if (dbRows.scheduling_notices) memoryStore.schedulingNotices = Array.isArray(dbRows.scheduling_notices) ? dbRows.scheduling_notices : [];
         if (dbRows.admin_security && dbRows.admin_security.passwordHash) {
           memoryStore.adminSecurity = { ...defaultState.adminSecurity, ...dbRows.admin_security };
         }
@@ -160,6 +173,8 @@ async function loadStore() {
           notifications_history: memoryStore.notificationsHistory,
           scheduled_notifications: memoryStore.scheduledNotifications,
           push_funnel: memoryStore.pushFunnel,
+          ai_auto_pilot: memoryStore.aiAutoPilot,
+          scheduling_notices: memoryStore.schedulingNotices,
           admin_security: memoryStore.adminSecurity
         });
       }
@@ -188,7 +203,7 @@ async function flushStore() {
     try {
       const keys = dirtyDbKeys.size > 0
         ? Array.from(dirtyDbKeys)
-        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'push_funnel', 'admin_security'];
+        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'push_funnel', 'ai_auto_pilot', 'scheduling_notices', 'admin_security'];
       dirtyDbKeys.clear();
 
       for (const k of keys) {
@@ -201,6 +216,8 @@ async function flushStore() {
         else if (k === 'notifications_history') await saveKeyToDatabase('notifications_history', memoryStore.notificationsHistory);
         else if (k === 'scheduled_notifications') await saveKeyToDatabase('scheduled_notifications', memoryStore.scheduledNotifications);
         else if (k === 'push_funnel') await saveKeyToDatabase('push_funnel', memoryStore.pushFunnel);
+        else if (k === 'ai_auto_pilot') await saveKeyToDatabase('ai_auto_pilot', memoryStore.aiAutoPilot);
+        else if (k === 'scheduling_notices') await saveKeyToDatabase('scheduling_notices', memoryStore.schedulingNotices);
         else if (k === 'admin_security') await saveKeyToDatabase('admin_security', memoryStore.adminSecurity);
       }
     } catch (err) {
@@ -613,9 +630,16 @@ export function getNotificationsHistory() {
 }
 
 // -------------------------------------------------------------
-// SCHEDULED PUSH NOTIFICATIONS
+// SCHEDULED PUSH NOTIFICATIONS & ADVANCE NOTICES
 // -------------------------------------------------------------
-export function schedulePushNotification({ title, message, url, scheduledAt }) {
+export async function schedulePushNotification({
+  title,
+  message,
+  url,
+  scheduledAt,
+  broadcastAdvanceNotice = false,
+  source = 'manual'
+}) {
   if (!title || !message) {
     throw new Error('Title and message are required.');
   }
@@ -625,13 +649,15 @@ export function schedulePushNotification({ title, message, url, scheduledAt }) {
     throw new Error('Scheduled date and time must be set in the future.');
   }
 
+  const schedId = `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const item = {
-    id: `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: schedId,
     title: title.trim(),
     message: message.trim(),
-    url: (url && url.trim()) || '/',
+    url: (url && url.trim()) || '/lobby',
     scheduledAt: time,
     createdAt: Date.now(),
+    source, // 'manual' | 'ai_studio' | 'ai_autopilot'
     status: 'pending' // 'pending' | 'sent' | 'cancelled'
   };
 
@@ -641,8 +667,124 @@ export function schedulePushNotification({ title, message, url, scheduledAt }) {
 
   memoryStore.scheduledNotifications.push(item);
   memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
-  scheduleFlush();
-  return item;
+
+  // Friendly date and time descriptors
+  const triggerDate = new Date(time);
+  const timeDesc = triggerDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateDesc = triggerDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+  // Record an Advance Scheduling Notice
+  const notice = {
+    id: `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    campaignId: schedId,
+    title: item.title,
+    scheduledAt: time,
+    scheduledAtDesc: `${dateDesc} at ${timeDesc}`,
+    message: item.message,
+    source,
+    advanceNoticeSent: false,
+    createdAt: Date.now()
+  };
+
+  if (!memoryStore.schedulingNotices) {
+    memoryStore.schedulingNotices = [];
+  }
+
+  // If broadcastAdvanceNotice is requested, send an immediate advance alert to all subscribers
+  if (broadcastAdvanceNotice) {
+    try {
+      const advanceTitle = `📅 Scheduled: ${item.title}`;
+      const advanceBody = `⚡ Upcoming match at ${timeDesc}! ${item.message.slice(0, 75)}`;
+      await sendBroadcastPushNotification({
+        title: advanceTitle,
+        message: advanceBody,
+        url: item.url || '/lobby'
+      });
+      notice.advanceNoticeSent = true;
+    } catch (err) {
+      console.warn('[AnalyticsStore] Failed to send advance push notification:', err.message);
+    }
+  }
+
+  memoryStore.schedulingNotices.unshift(notice);
+  if (memoryStore.schedulingNotices.length > 50) {
+    memoryStore.schedulingNotices = memoryStore.schedulingNotices.slice(0, 50);
+  }
+
+  scheduleFlush('scheduled_notifications');
+  scheduleFlush('scheduling_notices');
+  return { scheduledItem: item, notice };
+}
+
+export function getSchedulingNotices() {
+  return memoryStore.schedulingNotices || [];
+}
+
+export function getAiAutoPilotConfig() {
+  return memoryStore.aiAutoPilot || defaultState.aiAutoPilot;
+}
+
+export function updateAiAutoPilotConfig({ enabled, geminiApiKey }) {
+  if (!memoryStore.aiAutoPilot) {
+    memoryStore.aiAutoPilot = { ...defaultState.aiAutoPilot };
+  }
+  if (enabled !== undefined) {
+    memoryStore.aiAutoPilot.enabled = Boolean(enabled);
+  }
+  if (geminiApiKey !== undefined) {
+    memoryStore.aiAutoPilot.geminiApiKey = (typeof geminiApiKey === 'string' && geminiApiKey.trim())
+      ? geminiApiKey.trim()
+      : null;
+  }
+  scheduleFlush('ai_auto_pilot');
+  return memoryStore.aiAutoPilot;
+}
+
+export async function processAiAutoPilotTick() {
+  if (!memoryStore.aiAutoPilot || !memoryStore.aiAutoPilot.enabled) return;
+
+  const todayKey = getTodayKey();
+  if (memoryStore.aiAutoPilot.lastScheduledDate === todayKey) return;
+
+  const now = Date.now();
+  const hasPending = (memoryStore.scheduledNotifications || []).some(
+    n => n.status === 'pending' && n.scheduledAt > now
+  );
+  if (hasPending) {
+    return;
+  }
+
+  try {
+    const stats = getAdminDashboardStats();
+    const campaign = await generateSmartNotificationCampaign({
+      stats,
+      apiKey: memoryStore.aiAutoPilot.geminiApiKey
+    });
+
+    if (campaign && campaign.suggestions && campaign.suggestions.length > 0) {
+      const topPick = campaign.suggestions[0];
+      let triggerTime = topPick.scheduledAt;
+      if (!triggerTime || triggerTime <= now + 5 * 60 * 1000) {
+        triggerTime = now + 20 * 60 * 1000;
+      }
+
+      await schedulePushNotification({
+        title: topPick.title,
+        message: topPick.message,
+        url: topPick.url || '/lobby',
+        scheduledAt: triggerTime,
+        broadcastAdvanceNotice: true,
+        source: 'ai_autopilot'
+      });
+
+      memoryStore.aiAutoPilot.lastScheduledDate = todayKey;
+      memoryStore.aiAutoPilot.lastRunAt = Date.now();
+      scheduleFlush('ai_auto_pilot');
+      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign: "${topPick.title}" for ${new Date(triggerTime).toLocaleTimeString()}`);
+    }
+  } catch (err) {
+    console.error('[AI Auto-Pilot] Error in auto-pilot tick:', err);
+  }
 }
 
 export function getScheduledNotifications() {
@@ -975,7 +1117,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.7',
+    version: '2.4.8',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
@@ -985,6 +1127,8 @@ export function getBackupPayload() {
     pushSubscriptions: memoryStore.pushSubscriptions,
     notificationsHistory: memoryStore.notificationsHistory,
     scheduledNotifications: memoryStore.scheduledNotifications || [],
+    schedulingNotices: memoryStore.schedulingNotices || [],
+    aiAutoPilot: memoryStore.aiAutoPilot || defaultState.aiAutoPilot,
     pushFunnel: memoryStore.pushFunnel || defaultState.pushFunnel
   };
 }
@@ -1080,6 +1224,25 @@ export function restoreBackupData(backupData) {
     memoryStore.pushFunnel.totalConversions = Math.max(memoryStore.pushFunnel.totalConversions || 0, backupData.pushFunnel.totalConversions || 0);
   }
 
+  // 8. Merge AI Auto-Pilot & Scheduling Notices
+  if (backupData.aiAutoPilot && typeof backupData.aiAutoPilot === 'object') {
+    memoryStore.aiAutoPilot = {
+      ...defaultState.aiAutoPilot,
+      ...(memoryStore.aiAutoPilot || {}),
+      ...backupData.aiAutoPilot
+    };
+  }
+  if (Array.isArray(backupData.schedulingNotices)) {
+    if (!memoryStore.schedulingNotices) memoryStore.schedulingNotices = [];
+    const existingNoticeIds = new Set(memoryStore.schedulingNotices.map(n => n.id));
+    for (const notice of backupData.schedulingNotices) {
+      if (notice && notice.id && !existingNoticeIds.has(notice.id)) {
+        memoryStore.schedulingNotices.push(notice);
+        existingNoticeIds.add(notice.id);
+      }
+    }
+  }
+
   // Re-aggregate and flush to disk
   recomputeAggregatedBotStats();
   flushToDisk();
@@ -1095,6 +1258,8 @@ export function restoreBackupData(backupData) {
       push_subscriptions: memoryStore.pushSubscriptions,
       notifications_history: memoryStore.notificationsHistory,
       scheduled_notifications: memoryStore.scheduledNotifications,
+      scheduling_notices: memoryStore.schedulingNotices,
+      ai_auto_pilot: memoryStore.aiAutoPilot,
       push_funnel: memoryStore.pushFunnel,
       admin_security: memoryStore.adminSecurity
     }).catch(err => console.error('[Restore] PostgreSQL sync error:', err.message));
@@ -1105,9 +1270,12 @@ export function restoreBackupData(backupData) {
 // Initialize on module import
 loadStore();
 
-// Start recurring background scheduler (checks every 20 seconds for due notifications)
+// Start recurring background scheduler (checks every 20 seconds for due notifications & auto-pilot tick)
 setInterval(() => {
   processDueScheduledNotifications().catch(err => {
     console.error('[PushScheduler] Background job error:', err);
+  });
+  processAiAutoPilotTick().catch(err => {
+    console.error('[AiAutoPilot] Background ticker error:', err);
   });
 }, 20000);

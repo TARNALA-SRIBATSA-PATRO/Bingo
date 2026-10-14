@@ -97,6 +97,12 @@ const RefreshIcon = ({ size = 16, className = "" }) => (
   </svg>
 );
 
+const SparklesIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.364-6.364l-2.121 2.121M7.757 16.243l-2.121 2.121m12.728 0l-2.121-2.121M7.757 7.757L5.636 5.636" />
+  </svg>
+);
+
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '0s';
   if (seconds < 60) return `${seconds}s`;
@@ -210,6 +216,24 @@ export default function AdminDashboard() {
   const [editDateTime, setEditDateTime] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editFeedback, setEditFeedback] = useState(null);
+
+  // AI Campaign Studio & Auto-Pilot State
+  const [aiContext, setAiContext] = useState(null);
+  const [aiEngineUsed, setAiEngineUsed] = useState(null);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiAutoPilotConfig, setAiAutoPilotConfig] = useState({
+    enabled: false,
+    lastScheduledDate: null,
+    lastRunAt: null,
+    geminiApiKey: null
+  });
+  const [isSavingAutoPilot, setIsSavingAutoPilot] = useState(false);
+  const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
+  const [customApiKeyInput, setCustomApiKeyInput] = useState('');
+  const [schedulingNotices, setSchedulingNotices] = useState([]);
+  const [sendAdvanceNoticeWithPush, setSendAdvanceNoticeWithPush] = useState(true);
 
   // Compute query dates based on rangeMode
   const queryParams = useMemo(() => {
@@ -332,7 +356,7 @@ export default function AdminDashboard() {
       if (queryParams.startDate) query.append('startDate', queryParams.startDate);
       if (queryParams.endDate) query.append('endDate', queryParams.endDate);
 
-      const [statsRes, historyRes, scheduledRes] = await Promise.all([
+      const [statsRes, historyRes, scheduledRes, autopilotRes, noticesRes] = await Promise.all([
         fetch(`/api/admin/stats?${query.toString()}`, {
           headers: { 'x-admin-token': authToken }
         }),
@@ -341,7 +365,13 @@ export default function AdminDashboard() {
         }),
         fetch('/api/admin/push/scheduled', {
           headers: { 'x-admin-token': authToken }
-        })
+        }),
+        fetch('/api/admin/ai-push/autopilot', {
+          headers: { 'x-admin-token': authToken }
+        }).catch(() => null),
+        fetch('/api/admin/ai-push/notices', {
+          headers: { 'x-admin-token': authToken }
+        }).catch(() => null)
       ]);
 
       if (statsRes.status === 401 || historyRes.status === 401) {
@@ -364,6 +394,25 @@ export default function AdminDashboard() {
       const statsData = await statsRes.json();
       const historyData = await historyRes.json();
       const scheduledData = scheduledRes.ok ? await scheduledRes.json() : null;
+
+      if (autopilotRes && autopilotRes.ok) {
+        try {
+          const apData = await autopilotRes.json();
+          if (apData.success && apData.config) {
+            setAiAutoPilotConfig(apData.config);
+            setCustomApiKeyInput(apData.config.geminiApiKey || '');
+          }
+        } catch {}
+      }
+
+      if (noticesRes && noticesRes.ok) {
+        try {
+          const nData = await noticesRes.json();
+          if (nData.success) {
+            setSchedulingNotices(nData.notices || []);
+          }
+        } catch {}
+      }
 
       if (statsData.success) {
         const currentStats = statsData.stats;
@@ -436,6 +485,144 @@ export default function AdminDashboard() {
       }
     } catch {}
   }, [token]);
+
+  // Fetch AI Contextual Suggestions
+  const fetchAiSuggestions = useCallback(async () => {
+    if (!token) return;
+    setIsLoadingAi(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/admin/ai-push/suggestions', {
+        headers: { 'x-admin-token': token }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiContext(data.context || null);
+        setAiEngineUsed(data.engineUsed || null);
+        setAiSuggestions(data.suggestions || []);
+      } else {
+        setAiError(data.error || 'Failed to generate AI suggestions');
+      }
+    } catch {
+      setAiError('Network error while generating AI suggestions');
+    } finally {
+      setIsLoadingAi(false);
+    }
+  }, [token]);
+
+  // Handle Instant AI Auto-Schedule & Advance Notice Broadcast
+  async function handleInstantAiSchedule(sugg) {
+    if (!token || !sugg) return;
+    setIsSendingPush(true);
+    setPushFeedback(null);
+    try {
+      const res = await fetch('/api/admin/ai-push/auto-schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({
+          title: sugg.title,
+          message: sugg.message,
+          url: sugg.url || '/lobby',
+          scheduledAt: sugg.scheduledAt,
+          broadcastAdvanceNotice: true
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPushFeedback({
+          type: 'success',
+          text: `⚡ Campaign "${sugg.title}" scheduled for ${sugg.scheduledAtDesc || new Date(sugg.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}! Advance notice broadcast dispatched to subscribers.`
+        });
+        fetchScheduledQueue();
+        const nRes = await fetch('/api/admin/ai-push/notices', { headers: { 'x-admin-token': token } });
+        if (nRes.ok) {
+          const nData = await nRes.json();
+          if (nData.success) setSchedulingNotices(nData.notices || []);
+        }
+      } else {
+        setPushFeedback({ type: 'error', text: data.error || 'Failed to auto-schedule notification' });
+      }
+    } catch {
+      setPushFeedback({ type: 'error', text: 'Network error scheduling AI campaign' });
+    } finally {
+      setIsSendingPush(false);
+    }
+  }
+
+  // Use AI suggestion inside standard form
+  function handleUseAiSuggestion(sugg) {
+    if (!sugg) return;
+    setPushTitle(sugg.title);
+    setPushMessage(sugg.message);
+    setPushUrl(sugg.url || '/lobby');
+    setDeliveryMode('scheduled');
+    if (sugg.scheduledAt) {
+      const d = new Date(sugg.scheduledAt);
+      const localIso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setScheduledDateTime(localIso);
+    }
+    const formElem = document.getElementById('pushBroadcastForm');
+    if (formElem) {
+      formElem.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+
+  // Toggle Auto-Pilot
+  async function handleToggleAutoPilot(newVal) {
+    if (!token) return;
+    setIsSavingAutoPilot(true);
+    try {
+      const res = await fetch('/api/admin/ai-push/autopilot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({ enabled: newVal })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiAutoPilotConfig(data.config);
+      }
+    } catch (err) {
+      console.warn('Failed to update autopilot:', err);
+    } finally {
+      setIsSavingAutoPilot(false);
+    }
+  }
+
+  // Save Auto-Pilot & API Key Settings
+  async function handleSaveAutoPilotSettings(e) {
+    e.preventDefault();
+    if (!token) return;
+    setIsSavingAutoPilot(true);
+    try {
+      const res = await fetch('/api/admin/ai-push/autopilot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({
+          enabled: aiAutoPilotConfig.enabled,
+          geminiApiKey: customApiKeyInput
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiAutoPilotConfig(data.config);
+        setShowAutoPilotModal(false);
+        fetchAiSuggestions();
+      }
+    } catch (err) {
+      alert('Error updating Auto-Pilot settings: ' + err.message);
+    } finally {
+      setIsSavingAutoPilot(false);
+    }
+  }
 
   // Calculate user-friendly relative countdown string
   function getRelativeTimeDesc(dateTimeStr) {
@@ -536,12 +723,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (token) {
       fetchDashboardData(token);
+      fetchAiSuggestions();
       const interval = setInterval(() => {
         fetchDashboardData(token);
       }, 20000);
       return () => clearInterval(interval);
     }
-  }, [token, fetchDashboardData]);
+  }, [token, fetchDashboardData, fetchAiSuggestions]);
 
   // Handle Login
   async function handleLoginSubmit(e) {
@@ -613,7 +801,10 @@ export default function AdminDashboard() {
         title: pushTitle.trim(),
         message: pushMessage.trim(),
         url: pushUrl.trim() || '/lobby',
-        ...(deliveryMode === 'scheduled' ? { scheduledAt: new Date(scheduledDateTime).toISOString() } : {})
+        ...(deliveryMode === 'scheduled' ? {
+          scheduledAt: new Date(scheduledDateTime).toISOString(),
+          broadcastAdvanceNotice: sendAdvanceNoticeWithPush
+        } : {})
       };
 
       const res = await fetch(endpoint, {
@@ -630,11 +821,12 @@ export default function AdminDashboard() {
         if (deliveryMode === 'scheduled') {
           setPushFeedback({
             type: 'success',
-            text: `Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! It will automatically broadcast to all devices at the specified time.`
+            text: `Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! ${sendAdvanceNoticeWithPush ? 'Advance scheduling heads-up was broadcast to subscribers.' : 'It will automatically broadcast at the specified time.'}`
           });
           setPushTitle('');
           setPushMessage('');
           fetchScheduledQueue();
+          fetchDashboardData();
         } else {
           setPushFeedback({
             type: 'success',
@@ -1714,6 +1906,156 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* ========================================================================= */}
+        {/* AI CONTEXTUAL CAMPAIGN STUDIO & AUTO-PILOT (100% FREE OF COST)           */}
+        {/* ========================================================================= */}
+        <div className="admin-ai-studio-card">
+          <div className="admin-ai-header">
+            <div className="admin-ai-title-group">
+              <h4>
+                <SparklesIcon size={22} color="#c084fc" />
+                <span>AI Contextual Campaign Studio & Auto-Pilot</span>
+              </h4>
+              <p className="admin-ai-subtitle">
+                Context-aware AI analyzes current situation, day, special festival/calendar events (e.g. <em>Chai Break ☕</em>, <em>Bored of work?</em>, <em>Dinner relaxation</em>), and peak player activity to draft highly engaging, friendly notifications with automatic advance notices. <strong>100% Free of Cost!</strong>
+              </p>
+
+              <div className="admin-ai-status-row">
+                <div className="admin-ai-situation-pill">
+                  <span>{aiContext?.timeSlotIcon || '☕'}</span>
+                  <span>{aiContext?.timeSlot || 'Afternoon Chai Break Window'}</span>
+                  <span>• {aiContext?.dayName || 'Today'}</span>
+                  <span>• {aiContext?.currentTime || 'Live IST'}</span>
+                </div>
+
+                {aiContext?.specialOccasion && (
+                  <div className="admin-ai-holiday-pill">
+                    <span>🎉</span>
+                    <span>{aiContext.specialOccasion}</span>
+                  </div>
+                )}
+
+                <div className={`admin-ai-autopilot-badge ${aiAutoPilotConfig.enabled ? 'active' : 'idle'}`}>
+                  <span>{aiAutoPilotConfig.enabled ? '⚡ Auto-Pilot Active' : '💤 Auto-Pilot Idle'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="admin-ai-controls">
+              <button
+                type="button"
+                className="admin-ai-gen-btn"
+                onClick={fetchAiSuggestions}
+                disabled={isLoadingAi}
+              >
+                <SparklesIcon size={16} color="#ffffff" />
+                <span>{isLoadingAi ? 'Analyzing Context...' : '✨ Generate AI Suggestions'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="admin-ai-autopilot-btn"
+                onClick={() => setShowAutoPilotModal(true)}
+              >
+                <span>⚙️ Auto-Pilot Settings</span>
+              </button>
+            </div>
+          </div>
+
+          {aiError && (
+            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', fontSize: '0.82rem' }}>
+              ⚠️ {aiError}
+            </div>
+          )}
+
+          {/* AI Suggestions Cards */}
+          {aiSuggestions && aiSuggestions.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '4px 0 10px' }}>
+                <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 600 }}>
+                  🧠 Engine: <strong style={{ color: '#c084fc' }}>{aiEngineUsed || 'Built-in Smart Semantic AI (100% Free & Offline)'}</strong>
+                </span>
+                {aiContext?.recommendedTriggerDesc && (
+                  <span style={{ fontSize: '0.78rem', color: '#fde047', fontWeight: 600 }}>
+                    🎯 Recommended Trigger: {aiContext.recommendedTriggerDesc}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-ai-suggestions-grid">
+                {aiSuggestions.map((sugg) => (
+                  <div key={sugg.id} className="admin-ai-card">
+                    <div>
+                      <div className="admin-ai-card-badge">{sugg.badge}</div>
+                      <h5 className="admin-ai-card-title" style={{ marginTop: '8px' }}>{sugg.title}</h5>
+                      <p className="admin-ai-card-body" style={{ marginTop: '6px' }}>{sugg.message}</p>
+                    </div>
+
+                    <div>
+                      <div className="admin-ai-card-meta">
+                        <span className="admin-ai-card-trigger">
+                          <ClockIcon size={13} color="#facc15" />
+                          <span>{sugg.scheduledAtDesc || 'Upcoming Peak'}</span>
+                        </span>
+                        <span style={{ fontStyle: 'italic', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sugg.reasoning}>
+                          {sugg.reasoning}
+                        </span>
+                      </div>
+
+                      <div className="admin-ai-card-actions">
+                        <button
+                          type="button"
+                          className="admin-ai-card-btn use"
+                          onClick={() => handleUseAiSuggestion(sugg)}
+                        >
+                          <span>Use in Form ✍️</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-ai-card-btn schedule"
+                          onClick={() => handleInstantAiSchedule(sugg)}
+                          disabled={isSendingPush}
+                        >
+                          <span>⚡ Auto-Schedule</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Advance Scheduling Notices Queue */}
+          {schedulingNotices && schedulingNotices.length > 0 && (
+            <div className="admin-notices-container">
+              <div className="admin-notices-header">
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📢 Advance Scheduling Notices Dispatched ({schedulingNotices.length})</span>
+                </span>
+                <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                  Subscribers notified in advance of upcoming game sessions
+                </span>
+              </div>
+              <div>
+                {schedulingNotices.slice(0, 3).map((notice) => (
+                  <div key={notice.id} className="admin-notice-item">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span className="admin-notice-badge">Notified ⚡</span>
+                      <span className="admin-notice-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {notice.title}
+                      </span>
+                    </div>
+                    <span className="admin-notice-time">
+                      Triggers: {notice.scheduledAtDesc}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Delivery Mode Selector */}
         <div style={{ marginTop: '16px' }}>
           <div className="admin-delivery-pills">
@@ -1734,7 +2076,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <form onSubmit={handleSendPush}>
+        <form id="pushBroadcastForm" onSubmit={handleSendPush}>
           {deliveryMode === 'scheduled' && (
             <div className="admin-scheduled-box">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
@@ -1757,7 +2099,19 @@ export default function AdminDashboard() {
                 onChange={(e) => setScheduledDateTime(e.target.value)}
                 required={deliveryMode === 'scheduled'}
               />
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="sendAdvanceNoticeCheckbox"
+                  checked={sendAdvanceNoticeWithPush}
+                  onChange={(e) => setSendAdvanceNoticeWithPush(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: '#6366f1', cursor: 'pointer' }}
+                />
+                <label htmlFor="sendAdvanceNoticeCheckbox" style={{ fontSize: '0.82rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                  📢 <strong>Send Advance Notice to subscribers now</strong> (alerts players that this match is scheduled for {scheduledDateTime ? new Date(scheduledDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'the specified time'})
+                </label>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '6px' }}>
                 ℹ️ When the scheduled time arrives, the server will automatically dispatch this push notification to all registered phones and record the event into Dispatched History.
               </div>
             </div>
@@ -2203,6 +2557,107 @@ export default function AdminDashboard() {
                   disabled={isSavingEdit || !editTitle.trim() || !editMessage.trim()}
                 >
                   {isSavingEdit ? 'Saving Changes...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Pilot & AI Settings Modal */}
+      {showAutoPilotModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowAutoPilotModal(false)}>
+          <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SparklesIcon size={20} color="#c084fc" />
+                <span>AI Auto-Pilot & Engine Settings</span>
+              </h3>
+              <button
+                type="button"
+                className="admin-icon-btn"
+                onClick={() => setShowAutoPilotModal(false)}
+                title="Close"
+                aria-label="Close"
+                style={{ width: '32px', height: '32px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAutoPilotSettings}>
+              {/* Daily Auto-Pilot Toggle Switch */}
+              <div style={{ padding: '14px 16px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
+                  <div>
+                    <strong style={{ color: '#f8fafc', fontSize: '0.94rem' }}>Automated Daily Peak Scheduling</strong>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                      When enabled, the server automatically crafts & schedules 1 optimal situation-aware campaign every day during peak player activity windows, complete with advance subscriber notices.
+                    </p>
+                  </div>
+                  <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '28px', flexShrink: 0, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={aiAutoPilotConfig.enabled}
+                      onChange={(e) => handleToggleAutoPilot(e.target.checked)}
+                      style={{ opacity: 0, width: 0, height: 0 }}
+                    />
+                    <span style={{
+                      position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                      backgroundColor: aiAutoPilotConfig.enabled ? '#7c3aed' : 'rgba(255,255,255,0.2)',
+                      borderRadius: '34px', transition: '0.3s'
+                    }}>
+                      <span style={{
+                        position: 'absolute', height: '22px', width: '22px', left: aiAutoPilotConfig.enabled ? '25px' : '3px', bottom: '3px',
+                        backgroundColor: '#ffffff', borderRadius: '50%', transition: '0.3s'
+                      }} />
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* 100% Free Guarantee Info */}
+              <div style={{ padding: '14px 16px', borderRadius: '12px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', marginBottom: '16px', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>
+                  ✨ 100% Free of Cost Guaranteed:
+                </div>
+                By default, Bingo runs the <strong>Built-in Smart Semantic AI Engine</strong> directly on the server with 0ms latency, zero credit cards, and zero external costs.
+                <div style={{ marginTop: '6px' }}>
+                  You can optionally enter a <strong>Google Gemini API Key</strong> below to leverage Gemini 2.5 Flash. Google's free tier provides 15 free requests per minute with zero billing required!
+                </div>
+              </div>
+
+              {/* Gemini API Key input */}
+              <div className="admin-form-group">
+                <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Gemini API Key (Optional)</span>
+                  <span style={{ fontSize: '0.74rem', color: '#a5b4fc' }}>Leave blank to use built-in free AI</span>
+                </label>
+                <input
+                  type="password"
+                  className="admin-input"
+                  placeholder="AIzaSy... (optional for Gemini 2.5 Flash free tier)"
+                  value={customApiKeyInput}
+                  onChange={(e) => setCustomApiKeyInput(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => setShowAutoPilotModal(false)}
+                  style={{ width: 'auto' }}
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary"
+                  style={{ width: 'auto' }}
+                  disabled={isSavingAutoPilot}
+                >
+                  {isSavingAutoPilot ? 'Saving...' : 'Save Configuration'}
                 </button>
               </div>
             </form>

@@ -2,57 +2,93 @@
   "users": {
     "usr_58f24b16717c5c496d3577f1": {
       "id": "usr_58f24b16717c5c496d3577f1",
-      "isPwa": false,
-      "visits": 2,
+      "isPwa": true,
+      "visits": 3,
       "botStats": {
         "pro": {
-          "total": 0,
-          "botWins": 0,
+          "draws": 1,
+          "total": 2,
+          "botWins": 1,
           "userWins": 0
         },
         "beginner": {
+          "draws": 0,
           "total": 0,
           "botWins": 0,
           "userWins": 0
         },
         "intermediate": {
-          "total": 0,
-          "botWins": 0,
-          "userWins": 0
+          "draws": 5,
+          "total": 8,
+          "botWins": 1,
+          "userWins": 2
         },
-        "totalMatches": 0
+        "totalMatches": 10
       },
-      "lastSeen": 1791966153636,
-      "firstSeen": 1791966100136,
+      "lastSeen": 1791975881938,
+      "firstSeen": 1791975871625,
       "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
-      "installedAt": null
+      "installedAt": 1791975871625
     },
     "usr_64955ec13e41797149dcbbf2": {
       "id": "usr_64955ec13e41797149dcbbf2",
       "isPwa": true,
-      "visits": 2,
+      "visits": 10,
       "botStats": {
         "pro": {
-          "total": 0,
-          "botWins": 0,
+          "draws": 0,
+          "total": 4,
+          "botWins": 4,
           "userWins": 0
         },
         "beginner": {
+          "draws": 0,
           "total": 8,
           "botWins": 2,
           "userWins": 6
         },
         "intermediate": {
+          "draws": 2,
           "total": 7,
           "botWins": 2,
           "userWins": 3
         },
-        "totalMatches": 15
+        "totalMatches": 19
       },
-      "lastSeen": 1791966178815,
+      "lastSeen": 1791975852315,
       "firstSeen": 1791966170593,
       "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36",
       "installedAt": 1791966170593
+    },
+    "usr_c42fbb6b7283279d592054ca": {
+      "id": "usr_c42fbb6b7283279d592054ca",
+      "isPwa": true,
+      "visits": 14,
+      "botStats": {
+        "pro": {
+          "draws": 3,
+          "total": 22,
+          "botWins": 12,
+          "userWins": 7
+        },
+        "beginner": {
+          "draws": 0,
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "intermediate": {
+          "draws": 3,
+          "total": 9,
+          "botWins": 5,
+          "userWins": 1
+        },
+        "totalMatches": 31
+      },
+      "lastSeen": 1791972865741,
+      "firstSeen": 1791971212158,
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36",
+      "installedAt": 1791971225727
     }
   },
   "hourlyActivity": {
@@ -65,10 +101,10 @@
       0,
       0,
       0,
-      4,
-      0,
-      0,
-      0,
+      33,
+      31,
+      7,
+      5,
       0,
       0,
       0,
@@ -85,36 +121,46 @@
   },
   "dailyUniqueUsers": {
     "2026-10-14": [
-      "usr_58f24b16717c5c496d3577f1",
-      "usr_64955ec13e41797149dcbbf2"
+      "usr_64955ec13e41797149dcbbf2",
+      "usr_c42fbb6b7283279d592054ca",
+      "usr_58f24b16717c5c496d3577f1"
     ]
   },
   "botStats": {
-    "totalMatches": 15,
+    "totalMatches": 60,
+    "totalDurationMs": 0,
+    "matchesWithDuration": 0,
     "beginner": {
+      "draws": 0,
       "total": 8,
       "botWins": 2,
       "userWins": 6
     },
     "intermediate": {
-      "total": 7,
-      "botWins": 2,
-      "userWins": 3
+      "draws": 10,
+      "total": 24,
+      "botWins": 8,
+      "userWins": 6
     },
     "pro": {
-      "total": 0,
-      "botWins": 0,
-      "userWins": 0
+      "draws": 4,
+      "total": 28,
+      "botWins": 17,
+      "userWins": 7
     }
   },
   "multiplayerStats": {
     "roomsCreated": 0,
-    "matchesCompleted": 0
+    "matchesCompleted": 0,
+    "totalDurationMs": 0,
+    "matchesWithDuration": 0,
+    "totalPlayerSlots": 0,
+    "roomsSampledForSize": 0
   },
   "pushSubscriptions": {
     "https://fcm.googleapis.com/fcm/send/dBWA6pNLZRw:APA91bHQLkXzFBONE9RSm4NqySXhz7d0AsJgaNzM9r9pOnZozXYG973hlPIYSFHqJDrvswNsXBtmewzj84yAU3dKGyrIpAidnfeyV_jAc7s_A-lW7IPz1yFUt-uway41Kuebc3K9_Gct": {
       "userId": "usr_58f24b16717c5c496d3577f1",
-      "createdAt": 1791966156279,
+      "createdAt": 1791975876378,
       "subscription": {
         "keys": {
           "auth": "6uPa_DZAsUNCs5beTRBG2g",
@@ -126,7 +172,7 @@
     },
     "https://fcm.googleapis.com/fcm/send/e7FvykfSsu0:APA91bEl39L-tBoylSMc7RKBpBQHcKTtICBQJV5Qij_p97g-Bnpcjz39bMYlX3ACqaDQ0oD-yR_gxlBqbcIOfaZgejHjBy0J5II0j726OTV2pP6Uuobef_fFe8SdwmKdshAMIhQuL5uU": {
       "userId": "usr_64955ec13e41797149dcbbf2",
-      "createdAt": 1791966181330,
+      "createdAt": 1791975854993,
       "subscription": {
         "keys": {
           "auth": "gMI20jyZWd15OHmdGhjqmw",
@@ -135,10 +181,68 @@
         "endpoint": "https://fcm.googleapis.com/fcm/send/e7FvykfSsu0:APA91bEl39L-tBoylSMc7RKBpBQHcKTtICBQJV5Qij_p97g-Bnpcjz39bMYlX3ACqaDQ0oD-yR_gxlBqbcIOfaZgejHjBy0J5II0j726OTV2pP6Uuobef_fFe8SdwmKdshAMIhQuL5uU",
         "expirationTime": null
       }
+    },
+    "https://fcm.googleapis.com/fcm/send/e8fyNEIpWi0:APA91bHJZnlDUk2K6V0ihzexrhBGrOu5uCFHQcWVIjYaJDUWTUCptwy3LvbleISixoaW019sACStihp5jQUWb4rS1-7gVjKhPXo5poB44JoSNsSK0l2wzew3FLbAvhQH0Jr-uPyV1LNU": {
+      "userId": "usr_c42fbb6b7283279d592054ca",
+      "createdAt": 1791975891845,
+      "subscription": {
+        "keys": {
+          "auth": "HU3njZi1ZHHSE1rvOq5NpA",
+          "p256dh": "BDNezr3HucH5dVF2J39WkL-KEub9BkHizleGF5QwrWgih5BUyDK1qufKozJyR9Iy-reJtvx9E0h0VgUb7mAnnzs"
+        },
+        "endpoint": "https://fcm.googleapis.com/fcm/send/e8fyNEIpWi0:APA91bHJZnlDUk2K6V0ihzexrhBGrOu5uCFHQcWVIjYaJDUWTUCptwy3LvbleISixoaW019sACStihp5jQUWb4rS1-7gVjKhPXo5poB44JoSNsSK0l2wzew3FLbAvhQH0Jr-uPyV1LNU",
+        "expirationTime": null
+      }
     }
   },
-  "notificationsHistory": [],
-  "scheduledNotifications": [],
+  "notificationsHistory": [
+    {
+      "id": "notif_1791972909938_kcmy0",
+      "url": "/lobby",
+      "title": "Tired of endless tabs & work? 😴👋",
+      "sentAt": 1791972909938,
+      "message": "Doctors recommend 5 minutes of pure fun to beat the 3 PM fatigue! Close that spreadsheet and grab a quick, refreshing win 🏆",
+      "failedCount": 1,
+      "deliveredCount": 3
+    }
+  ],
+  "scheduledNotifications": [
+    {
+      "id": "sched_1791972825316_8drz3",
+      "url": "/lobby",
+      "title": "Tired of endless tabs & work? 😴👋",
+      "sentAt": 1791972909938,
+      "status": "sent",
+      "message": "Doctors recommend 5 minutes of pure fun to beat the 3 PM fatigue! Close that spreadsheet and grab a quick, refreshing win 🏆",
+      "createdAt": 1791972825316,
+      "failedCount": 1,
+      "scheduledAt": 1791972900000,
+      "deliveredCount": 3
+    },
+    {
+      "id": "sched_1791972798150_ldmh3",
+      "url": "/lobby",
+      "title": "Tired of endless tabs & work? 😴👋",
+      "status": "cancelled",
+      "message": "Doctors recommend 5 minutes of pure fun to beat the 3 PM fatigue! Close that spreadsheet and grab a quick, refreshing win 🏆",
+      "createdAt": 1791972798150,
+      "scheduledAt": 1791976500000
+    }
+  ],
+  "aiAutoPilot": {
+    "enabled": false,
+    "lastScheduledDate": null,
+    "lastRunAt": null,
+    "geminiApiKey": null
+  },
+  "schedulingNotices": [],
+  "pushFunnel": {
+    "promptsShown": 0,
+    "promptsGranted": 4,
+    "promptsDenied": 0,
+    "totalClicks": 0,
+    "totalConversions": 0
+  },
   "adminSecurity": {
     "passwordHash": "3d0800cd480674bf618736f8a5dbfa8306716b88063be6d1d1f8b180094a487464b4f1984d8a09962345c895621a38bca2f7671d47362df7862e0ef591ceae11",
     "passwordSalt": "2cba516423be70efcd785b0b1d547306",
