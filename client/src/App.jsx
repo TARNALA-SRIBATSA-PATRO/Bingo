@@ -6,6 +6,7 @@ import { AudioProvider } from './context/AudioContext';
 import Notification from './components/Notification';
 import GlobalModals from './components/GlobalModals';
 import InstallPwaButton from './components/InstallPwaButton';
+import PushNotificationPrompt from './components/PushNotificationPrompt';
 import UpdateManager from './components/UpdateManager';
 import BackNavigationHandler from './components/BackNavigationHandler';
 import Footer from './components/Footer';
@@ -36,6 +37,7 @@ function App() {
               <Notification />
               <GlobalModals />
               <InstallPwaButton />
+              <PushNotificationPrompt />
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/how-to-play" element={<HowToPlay />} />

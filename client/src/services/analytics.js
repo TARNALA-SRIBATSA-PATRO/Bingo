@@ -138,9 +138,26 @@ export async function trackBotGame({ difficulty, winner }) {
   }
 }
 
+// Check push capabilities and current permission status
+export async function getPushSubscriptionState() {
+  if (
+    typeof window === 'undefined' ||
+    !('serviceWorker' in navigator) ||
+    !('PushManager' in window) ||
+    !('Notification' in window)
+  ) {
+    return { supported: false, permission: 'unsupported' };
+  }
+
+  return {
+    supported: true,
+    permission: Notification.permission
+  };
+}
+
 // Web Push Registration Helper
 export async function registerPushNotifications() {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     return { supported: false, error: 'Push notifications not supported on this browser' };
   }
 
@@ -191,6 +208,13 @@ export function initAnalytics() {
   getOrCreateSecretUserId();
   sendHeartbeat();
   syncOfflineQueue();
+
+  // Auto-sync push subscription if user already granted permission previously
+  if ('Notification' in window && Notification.permission === 'granted') {
+    setTimeout(() => {
+      registerPushNotifications().catch(() => {});
+    }, 2500);
+  }
 
   // Periodic heartbeat every 3 minutes
   const interval = setInterval(() => {

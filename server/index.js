@@ -29,10 +29,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.4';
+const CURRENT_VERSION = '2.3.5';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791960000000
+  buildTime: 1791961000000
 });
 
 const app = express();

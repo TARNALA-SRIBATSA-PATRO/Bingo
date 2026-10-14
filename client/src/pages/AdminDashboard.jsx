@@ -789,6 +789,12 @@ export default function AdminDashboard() {
           </span>
         </div>
 
+        {overview.totalPushSubscribers === 0 && (
+          <div style={{ margin: '12px 0', padding: '10px 14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', fontSize: '0.82rem', color: '#93c5fd', lineHeight: 1.4 }}>
+            ℹ️ <strong>Device Registration:</strong> Players visiting the app are politely asked to allow notifications on Home/Lobby. As soon as a player clicks <em>"Allow Alerts"</em> (or installs the PWA), their device token is securely registered here and will receive your broadcast alerts.
+          </div>
+        )}
+
         {pushFeedback && (
           <div className={`admin-push-status ${pushFeedback.type}`}>
             {pushFeedback.text}
