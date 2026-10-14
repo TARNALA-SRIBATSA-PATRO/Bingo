@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './UpdateManager.css';
 
-const CURRENT_APP_VERSION = '2.2.0';
+const CURRENT_APP_VERSION = '2.3.0';
 
 export default function UpdateManager() {
   const [updatingVersion, setUpdatingVersion] = useState(null);

@@ -6,6 +6,7 @@ import Notification from './components/Notification';
 import GlobalModals from './components/GlobalModals';
 import InstallPwaButton from './components/InstallPwaButton';
 import UpdateManager from './components/UpdateManager';
+import BackNavigationHandler from './components/BackNavigationHandler';
 import Footer from './components/Footer';
 import LandingPage from './pages/LandingPage';
 import HowToPlay from './pages/HowToPlay';
@@ -22,6 +23,7 @@ function App() {
         <SocketProvider>
           <GameProvider>
             <div className="app-wrapper">
+              <BackNavigationHandler />
               <UpdateManager />
               <Notification />
               <GlobalModals />

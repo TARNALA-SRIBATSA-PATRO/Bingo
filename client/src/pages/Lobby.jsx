@@ -50,6 +50,19 @@ export default function Lobby() {
     };
   }, []);
 
+  // Intercept back button when inside a mode form (e.g. Bot difficulty, Create Room, Join Code)
+  useEffect(() => {
+    const handleLobbyBack = (e) => {
+      if (mode) {
+        e.preventDefault();
+        setMode(null);
+        setError('');
+      }
+    };
+    window.addEventListener('bingo:lobby-back', handleLobbyBack);
+    return () => window.removeEventListener('bingo:lobby-back', handleLobbyBack);
+  }, [mode]);
+
   function handleCreate(e) {
     e.preventDefault();
     const cleanName = name.trim();
