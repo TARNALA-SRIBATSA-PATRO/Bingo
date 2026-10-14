@@ -741,39 +741,12 @@ export async function schedulePushNotification({
   memoryStore.scheduledNotifications.push(item);
   memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
 
-  // Friendly date and time descriptors strictly formatted in Indian Standard Time (IST) for Admin Display
-  const triggerDate = new Date(time);
-  const timeDesc = formatTimeIST(triggerDate, true);
-  const dateDesc = formatDateIST(triggerDate);
-
-  // Record an internal admin log record (for Admin Dashboard display only — NO push reminder is sent to players!)
-  const notice = {
-    id: `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    campaignId: schedId,
-    title: item.title,
-    scheduledAt: time,
-    scheduledAtDesc: `${dateDesc} at ${timeDesc}`,
-    message: item.message,
-    source,
-    createdAt: Date.now()
-  };
-
-  if (!memoryStore.schedulingNotices) {
-    memoryStore.schedulingNotices = [];
-  }
-
-  memoryStore.schedulingNotices.unshift(notice);
-  if (memoryStore.schedulingNotices.length > 50) {
-    memoryStore.schedulingNotices = memoryStore.schedulingNotices.slice(0, 50);
-  }
-
   scheduleFlush('scheduled_notifications');
-  scheduleFlush('scheduling_notices');
-  return { scheduledItem: item, notice };
+  return { scheduledItem: item };
 }
 
 export function getSchedulingNotices() {
-  return memoryStore.schedulingNotices || [];
+  return [];
 }
 
 export function getAiAutoPilotConfig() {
@@ -1180,7 +1153,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.5.3',
+    version: '2.5.4',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

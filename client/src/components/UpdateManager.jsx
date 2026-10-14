@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import './UpdateManager.css';
 
-const CURRENT_APP_VERSION = '2.5.3';
+const CURRENT_APP_VERSION = '2.5.4';
 
 export default function UpdateManager() {
   const location = useLocation();

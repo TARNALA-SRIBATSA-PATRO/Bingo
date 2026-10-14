@@ -76,7 +76,7 @@ for (const envCandidate of [
   }
 }
 
-const CURRENT_VERSION = '2.5.3';
+const CURRENT_VERSION = '2.5.4';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()
@@ -974,7 +974,7 @@ app.post('/api/admin/push/schedule', requireAdminAuth, async (req, res) => {
       scheduledAt,
       source: 'manual'
     });
-    res.json({ success: true, scheduledItem: result.scheduledItem, notice: result.notice });
+    res.json({ success: true, scheduledItem: result.scheduledItem });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
