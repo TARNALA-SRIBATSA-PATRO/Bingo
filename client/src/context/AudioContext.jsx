@@ -10,7 +10,7 @@ const DEFAULT_VOLUME = 0.35;
 
 /**
  * Suppress mobile OS media notification drawer / lock screen media banners.
- * Tells Android / iOS that this background music should NOT create a system media controller.
+ * Tells Android / iOS that this background sound should NOT create a system media controller.
  */
 function suppressMediaNotification() {
   if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
@@ -25,8 +25,61 @@ function suppressMediaNotification() {
   }
 }
 
+// Global Web Audio Context singleton & in-memory decoded buffer cache.
+// Using Web Audio API (AudioBufferSourceNode) ensures Chrome on Android treats audio
+// strictly as game/app SFX, completely preventing Android from generating a Quick Settings /
+// notification drawer media playback card.
+let sharedAudioCtx = null;
+function getAudioContext() {
+  if (!sharedAudioCtx && typeof window !== 'undefined') {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      sharedAudioCtx = new AudioContextClass();
+    }
+  }
+  return sharedAudioCtx;
+}
+
+const bufferCache = {
+  lobby: null,
+  game: null
+};
+
+const bufferPromises = {
+  lobby: null,
+  game: null
+};
+
+function fetchAndDecode(trackKey, url, ctx) {
+  if (bufferCache[trackKey]) return Promise.resolve(bufferCache[trackKey]);
+  if (bufferPromises[trackKey]) return bufferPromises[trackKey];
+
+  bufferPromises[trackKey] = fetch(url)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.arrayBuffer();
+    })
+    .then(arrayBuffer => {
+      return new Promise((resolve, reject) => {
+        ctx.decodeAudioData(arrayBuffer, resolve, reject);
+      });
+    })
+    .then(decoded => {
+      bufferCache[trackKey] = decoded;
+      return decoded;
+    })
+    .catch(err => {
+      console.warn(`[AudioContext] Failed to load/decode ${trackKey}:`, err);
+      bufferPromises[trackKey] = null;
+      return null;
+    });
+
+  return bufferPromises[trackKey];
+}
+
 export function AudioProvider({ children }) {
   const location = useLocation();
+
   // Initialize from localStorage; default to true (muted) on first visit
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -37,152 +90,183 @@ export function AudioProvider({ children }) {
   });
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Dedicated audio instances for 0ms transition switching
-  const lobbyAudioRef = useRef(null);
-  const gameAudioRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const currentSourceRef = useRef(null);
+  const currentTrackKeyRef = useRef(null);
+  const isMutedRef = useRef(isMuted);
+  isMutedRef.current = isMuted;
 
-  // Initialize audio tracks on mount
+  // Initialize Web Audio graph
+  const getGainNode = useCallback((ctx) => {
+    if (!gainNodeRef.current && ctx) {
+      gainNodeRef.current = ctx.createGain();
+      gainNodeRef.current.connect(ctx.destination);
+      gainNodeRef.current.gain.setValueAtTime(isMutedRef.current ? 0 : DEFAULT_VOLUME, ctx.currentTime);
+    }
+    return gainNodeRef.current;
+  }, []);
+
+  const stopTrack = useCallback(() => {
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop(0);
+        currentSourceRef.current.disconnect();
+      } catch {}
+      currentSourceRef.current = null;
+    }
+    currentTrackKeyRef.current = null;
+    setIsPlaying(false);
+    suppressMediaNotification();
+  }, []);
+
+  const startTrack = useCallback((trackKey) => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    if (isMutedRef.current || document.hidden || document.visibilityState === 'hidden') {
+      stopTrack();
+      return;
+    }
+
+    const gainNode = getGainNode(ctx);
+    if (gainNode) {
+      gainNode.gain.setValueAtTime(DEFAULT_VOLUME, ctx.currentTime);
+    }
+
+    // Already playing the correct track
+    if (currentTrackKeyRef.current === trackKey && currentSourceRef.current) {
+      setIsPlaying(true);
+      return;
+    }
+
+    // Stop current track before switching
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop(0);
+        currentSourceRef.current.disconnect();
+      } catch {}
+      currentSourceRef.current = null;
+    }
+
+    const buffer = bufferCache[trackKey];
+    if (!buffer) {
+      const trackUrl = trackKey === 'game' ? GAME_TRACK : LOBBY_TRACK;
+      fetchAndDecode(trackKey, trackUrl, ctx).then(loadedBuffer => {
+        if (loadedBuffer && !isMutedRef.current && !document.hidden) {
+          const currentPath = window.location.pathname;
+          const currentDesired = (currentPath === '/board-setup' || currentPath === '/game') ? 'game' : 'lobby';
+          if (currentDesired === trackKey) {
+            startTrack(trackKey);
+          }
+        }
+      });
+      return;
+    }
+
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(gainNode);
+      source.start(0);
+
+      currentSourceRef.current = source;
+      currentTrackKeyRef.current = trackKey;
+      setIsPlaying(true);
+      suppressMediaNotification();
+    } catch (err) {
+      console.warn('[AudioContext] Error playing buffer source:', err);
+    }
+  }, [getGainNode, stopTrack]);
+
+  // Preload and decode audio buffers on mount
   useEffect(() => {
     suppressMediaNotification();
-
-    const lobbyAudio = new Audio(LOBBY_TRACK);
-    lobbyAudio.loop = true;
-    lobbyAudio.volume = DEFAULT_VOLUME;
-    lobbyAudio.preload = 'auto';
-
-    const gameAudio = new Audio(GAME_TRACK);
-    gameAudio.loop = true;
-    gameAudio.volume = DEFAULT_VOLUME;
-    gameAudio.preload = 'auto';
-
-    lobbyAudioRef.current = lobbyAudio;
-    gameAudioRef.current = gameAudio;
-
-    lobbyAudio.load();
-    gameAudio.load();
-
-    const updatePlayingState = () => {
-      const isGame = window.location.pathname === '/board-setup' || window.location.pathname === '/game';
-      const active = isGame ? gameAudio : lobbyAudio;
-      setIsPlaying(!active.paused);
-      suppressMediaNotification();
-    };
-
-    lobbyAudio.addEventListener('play', updatePlayingState);
-    lobbyAudio.addEventListener('pause', updatePlayingState);
-    gameAudio.addEventListener('play', updatePlayingState);
-    gameAudio.addEventListener('pause', updatePlayingState);
-
-    return () => {
-      lobbyAudio.removeEventListener('play', updatePlayingState);
-      lobbyAudio.removeEventListener('pause', updatePlayingState);
-      gameAudio.removeEventListener('play', updatePlayingState);
-      gameAudio.removeEventListener('pause', updatePlayingState);
-
-      lobbyAudio.pause();
-      lobbyAudio.src = '';
-      gameAudio.pause();
-      gameAudio.src = '';
-      suppressMediaNotification();
-    };
+    const ctx = getAudioContext();
+    if (ctx) {
+      fetchAndDecode('lobby', LOBBY_TRACK, ctx);
+      fetchAndDecode('game', GAME_TRACK, ctx);
+    }
   }, []);
 
   // Determine active track by route
   const isGameSession = location.pathname === '/board-setup' || location.pathname === '/game';
+  const targetTrackKey = isGameSession ? 'game' : 'lobby';
 
-  // Track switching on route transition or mute state changes
+  // Handle route and mute changes
   useEffect(() => {
-    const lobbyAudio = lobbyAudioRef.current;
-    const gameAudio = gameAudioRef.current;
-    if (!lobbyAudio || !gameAudio) return;
-
-    const activeAudio = isGameSession ? gameAudio : lobbyAudio;
-    const inactiveAudio = isGameSession ? lobbyAudio : gameAudio;
-
-    // Immediately stop inactive track
-    if (!inactiveAudio.paused) {
-      inactiveAudio.pause();
-      inactiveAudio.currentTime = 0;
-    }
-
+    const ctx = getAudioContext();
     if (isMuted) {
-      if (!activeAudio.paused) {
-        activeAudio.pause();
+      stopTrack();
+      if (gainNodeRef.current && ctx) {
+        gainNodeRef.current.gain.setValueAtTime(0, ctx.currentTime);
       }
-      setIsPlaying(false);
-      suppressMediaNotification();
-      return;
+    } else {
+      if (ctx && ctx.state === 'suspended' && !document.hidden) {
+        ctx.resume().catch(() => {});
+      }
+      startTrack(targetTrackKey);
     }
+  }, [targetTrackKey, isMuted, startTrack, stopTrack]);
 
-    // Do not auto-play if the page is currently in the background or screen is locked
-    if (document.hidden || document.visibilityState === 'hidden') {
-      if (!activeAudio.paused) activeAudio.pause();
-      setIsPlaying(false);
-      suppressMediaNotification();
-      return;
-    }
+  // User gesture unlock listener (for mobile browser autoplay policies)
+  useEffect(() => {
+    const unlockAudio = () => {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended' && !document.hidden && !isMutedRef.current) {
+        ctx.resume().then(() => {
+          const path = window.location.pathname;
+          const currentTarget = (path === '/board-setup' || path === '/game') ? 'game' : 'lobby';
+          startTrack(currentTarget);
+        }).catch(() => {});
+      }
+    };
 
-    // Play active track if unmuted and tab is visible
-    if (activeAudio.paused) {
-      activeAudio.play()
-        .then(() => {
-          setIsPlaying(true);
-          suppressMediaNotification();
-        })
-        .catch(() => {
-          setIsPlaying(false);
-          const resumeOnInteract = () => {
-            if (!document.hidden) {
-              activeAudio.play().then(() => {
-                setIsPlaying(true);
-                suppressMediaNotification();
-              }).catch(() => {});
-            }
-            window.removeEventListener('pointerdown', resumeOnInteract);
-            window.removeEventListener('keydown', resumeOnInteract);
-          };
-          window.addEventListener('pointerdown', resumeOnInteract, { once: true });
-          window.addEventListener('keydown', resumeOnInteract, { once: true });
-        });
-    }
-  }, [isGameSession, isMuted]);
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, [startTrack]);
 
   // STOP MUSIC IMMEDIATELY when Home button is clicked, app goes to background, or screen is locked
   useEffect(() => {
     const handleVisibilityChange = () => {
-      const lobbyAudio = lobbyAudioRef.current;
-      const gameAudio = gameAudioRef.current;
-      if (!lobbyAudio || !gameAudio) return;
-
-      const isGame = window.location.pathname === '/board-setup' || window.location.pathname === '/game';
-      const activeAudio = isGame ? gameAudio : lobbyAudio;
-
+      const ctx = getAudioContext();
       if (document.hidden || document.visibilityState === 'hidden') {
         // User pressed Home button, switched apps, or locked phone screen!
-        // Immediately silence all audio tracks
-        if (lobbyAudio && !lobbyAudio.paused) lobbyAudio.pause();
-        if (gameAudio && !gameAudio.paused) gameAudio.pause();
+        if (ctx && ctx.state === 'running') {
+          ctx.suspend().catch(() => {});
+        }
         setIsPlaying(false);
         suppressMediaNotification();
       } else {
         // User returned to app or unlocked phone screen
-        // Resume ONLY if sound is not muted
-        if (!isMuted && activeAudio) {
-          activeAudio.play()
-            .then(() => {
-              setIsPlaying(true);
-              suppressMediaNotification();
-            })
-            .catch(() => {});
+        if (!isMutedRef.current) {
+          if (ctx && ctx.state === 'suspended') {
+            ctx.resume().then(() => {
+              const path = window.location.pathname;
+              const currentTarget = (path === '/board-setup' || path === '/game') ? 'game' : 'lobby';
+              startTrack(currentTarget);
+            }).catch(() => {});
+          } else {
+            const path = window.location.pathname;
+            const currentTarget = (path === '/board-setup' || path === '/game') ? 'game' : 'lobby';
+            startTrack(currentTarget);
+          }
         }
       }
     };
 
     const handlePageHide = () => {
-      const lobbyAudio = lobbyAudioRef.current;
-      const gameAudio = gameAudioRef.current;
-      if (lobbyAudio && !lobbyAudio.paused) lobbyAudio.pause();
-      if (gameAudio && !gameAudio.paused) gameAudio.pause();
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'running') {
+        ctx.suspend().catch(() => {});
+      }
       setIsPlaying(false);
       suppressMediaNotification();
     };
@@ -196,7 +280,7 @@ export function AudioProvider({ children }) {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('freeze', handlePageHide);
     };
-  }, [isMuted]);
+  }, [startTrack]);
 
   // Toggle mute button handler (triggered by user gesture)
   const toggleMute = useCallback(() => {
@@ -206,38 +290,24 @@ export function AudioProvider({ children }) {
         localStorage.setItem(STORAGE_KEY, String(next));
       } catch {}
 
-      const lobbyAudio = lobbyAudioRef.current;
-      const gameAudio = gameAudioRef.current;
-      const isGame = window.location.pathname === '/board-setup' || window.location.pathname === '/game';
-      const activeAudio = isGame ? gameAudio : lobbyAudio;
-      const inactiveAudio = isGame ? lobbyAudio : gameAudio;
-
-      if (inactiveAudio) {
-        inactiveAudio.pause();
-        inactiveAudio.currentTime = 0;
-      }
-
-      if (activeAudio) {
-        if (next) {
-          activeAudio.pause();
-          setIsPlaying(false);
-          suppressMediaNotification();
-        } else {
-          // Only play if tab is currently visible
-          if (!document.hidden) {
-            activeAudio.play()
-              .then(() => {
-                setIsPlaying(true);
-                suppressMediaNotification();
-              })
-              .catch(() => {});
-          }
+      const ctx = getAudioContext();
+      if (next) {
+        stopTrack();
+        if (gainNodeRef.current && ctx) {
+          gainNodeRef.current.gain.setValueAtTime(0, ctx.currentTime);
         }
+      } else {
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        const path = window.location.pathname;
+        const currentTarget = (path === '/board-setup' || path === '/game') ? 'game' : 'lobby';
+        startTrack(currentTarget);
       }
 
       return next;
     });
-  }, []);
+  }, [startTrack, stopTrack]);
 
   return (
     <AudioContext.Provider value={{
