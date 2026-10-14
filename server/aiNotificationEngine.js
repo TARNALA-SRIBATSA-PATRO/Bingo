@@ -786,7 +786,7 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   // 1. Relatable & Familiar
   let var1 = {
     category: 'Relatable & Familiar',
-    badge: 'Chai & Micro-Break ☕',
+    badge: 'Chai & Micro-Break',
     title: 'Chai & Bingo Break? ☕',
     message: 'Tired of looking at work & screens? Take a quick 2-min chai break with a refreshing Bingo round!',
     url: '/lobby'
@@ -795,7 +795,7 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   // 2. Playful Challenge / Funny Boredom Buster
   let var2 = {
     category: 'Boredom Buster',
-    badge: 'Brain Recharge ⚡',
+    badge: 'Brain Recharge',
     title: 'Spreadsheets vs Bingo? 📊',
     message: 'Pause the boring work for 2 minutes. Can you beat the Pro Bot before someone pings on Slack?',
     url: '/bot'
@@ -804,7 +804,7 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   // 3. Social / Evening / Weekend Vibe
   let var3 = {
     category: 'Social Room',
-    badge: 'Friends & Family 🎮',
+    badge: 'Friends & Family',
     title: 'Who’s ready for Bingo tonight? 🏆',
     message: 'Relaxing on the couch or having dinner? Create a quick private room and challenge your friends!',
     url: '/lobby'
@@ -814,33 +814,34 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   if (usedChai) {
     var1.title = '2-Minute Brain Reboot 🔋';
     var1.message = 'Eyes tired from screens? Reset your focus with a quick, satisfying 5-line Bingo victory!';
-    var1.badge = 'Quick Reboot 🔋';
+    var1.badge = 'Quick Reboot';
   }
   if (usedBoredom) {
     var2.title = 'Can you beat Pro Bot in 90s? 🤖';
     var2.message = 'The Bot claims it cannot be defeated today. Prove it wrong in a rapid solo match!';
-    var2.badge = 'Bot Challenge 🤖';
+    var2.badge = 'Bot Challenge';
   }
 
   // Contextual overrides based on target trigger time & festive occasions
   if (specialDay) {
+    const cleanFestivalName = (specialDay.name || 'Festival').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim() || 'Festive Greeting';
     var1 = {
       category: 'Festive Greeting',
-      badge: `${specialDay.name} ✨`,
+      badge: cleanFestivalName,
       title: specialDay.greetingTitle || `${specialDay.name} Wishes! 🪔`,
       message: `${specialDay.wish} Celebrate with family & friends over a festive Bingo match!`,
       url: '/lobby'
     };
     var2 = {
       category: 'Festive Banter',
-      badge: 'Sweets & Bingo 🍬',
+      badge: 'Sweets & Bingo',
       title: `Kaju Katli vs Pro Bot? 🍬`,
       message: `Festive sweets in one hand, Bingo card in the other! Can you score 5 lines before the sweets vanish?`,
       url: '/bot'
     };
     var3 = {
-      category: 'Family WhatsApp Room',
-      badge: 'Family Room 👨‍👩‍👧‍👦',
+      category: 'Family Room',
+      badge: 'Family Room',
       title: `Family Bingo: ${specialDay.name} 🎊`,
       message: `Drop your room link in your family WhatsApp group and find out who screams BINGO first!`,
       url: '/lobby'
@@ -976,7 +977,8 @@ STRICT INSTRUCTIONS:
 1. LIVE FESTIVAL & EVENT AWARENESS: First analyze whether the target trigger date (${targetDayName}, ${targetDateString}) has any festival (e.g. Diwali, Dhanteras, Chhath Puja, Bhai Dooj, Eid, Holi, Christmas, Independence Day, etc.) or major sports event. If yes and the target time is in the morning/day, lead with an authentic, warm, heartfelt festival greeting & wish.
 2. ANTI-REPETITION MANDATE: Do NOT repeat, paraphrase, or mimic the copy or hooks from today's previous messages listed above. Every message must be 100% unique, fresh, funny, casual, game-friendly, and attractive!
 3. TARGET TIME & DAY OF THE WEEK ACCURACY: The message MUST strictly match the TARGET TRIGGER TIME AND DAY (${targetDayName}, ${targetDateString} at ${targetTimeString}). If you mention any day of the week in title or message (e.g. "${targetDayName} morning", "${targetDayName} chill"), it MUST be "${targetDayName}" (the target trigger day), NEVER today's day (${context.dayName})!
-4. CONSTRAINTS: Title under 40 characters. Message under 120 characters. Include 1-2 lively emojis in both title and message.
+4. STRICTLY NO APP SIGNATURE OR WATERMARK: Do NOT append any signature, app name, company signature, watermark, or 'AI generated' suffix in the title or message (such as "- Bingo", "~ Bingo App", "- Team Bingo", "Sent via Bingo", "Crafted by AI", etc.). The message MUST end naturally without any signature.
+5. CONSTRAINTS: Title under 40 characters. Message under 120 characters. Include 1-2 lively emojis in both title and message.
 
 Return STRICTLY a JSON object matching this schema:
 {
@@ -1047,17 +1049,24 @@ Return STRICTLY a JSON object matching this schema:
 
       return {
         webAnalysisNotes: parsed.webAnalysisNotes || (detectedFestival ? `Live calendar match: ${detectedFestival.name}` : `Standard active day in ${targetDayName}`),
-        suggestions: parsed.suggestions.map((s, idx) => ({
-          id: `ai_gemini_${idx + 1}`,
-          category: s.category || 'AI Generated',
-          badge: s.badge || 'Smart Match ⚡',
-          title: s.title,
-          message: s.message,
-          url: s.url || '/lobby',
-          scheduledAt: triggerTimeMs,
-          scheduledAtDesc: `${targetDateString} at ${targetTimeString}`,
-          reasoning: s.reasoning || `Crafted by Gemini AI for ${targetTimeString} (${targetSlot.slotTitle}).`
-        }))
+        suggestions: parsed.suggestions.map((s, idx) => {
+          let cleanTitle = (s.title || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
+          let cleanMessage = (s.message || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
+          let cleanBadge = (s.badge || 'Smart Match').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim();
+          return {
+            id: `sug_${idx + 1}`,
+            category: s.category || 'Suggested Campaign',
+            badge: cleanBadge || 'Smart Match',
+            title: cleanTitle,
+            message: cleanMessage,
+            url: s.url || '/lobby',
+            scheduledAt: triggerTimeMs,
+            scheduledAtDesc: `${targetDateString} at ${targetTimeString}`,
+            reasoning: s.reasoning
+              ? s.reasoning.replace(/Crafted by Gemini AI for/gi, 'Suggested for').replace(/Gemini AI/gi, 'Automated scheduler')
+              : `Scheduled for ${targetTimeString} (${targetSlot.slotTitle}).`
+          };
+        })
       };
     } catch (err) {
       console.warn(`[Gemini API] Error trying model ${model}:`, err.message);
@@ -1119,7 +1128,7 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
     if (geminiResult && geminiResult.suggestions && geminiResult.suggestions.length > 0) {
       suggestions = geminiResult.suggestions;
       webAnalysisNotes = geminiResult.webAnalysisNotes || webAnalysisNotes;
-      engineUsed = 'Google Gemini 2.5 Flash (Free Tier with Live Web Awareness)';
+      engineUsed = 'Automated Scheduler';
     }
   }
 

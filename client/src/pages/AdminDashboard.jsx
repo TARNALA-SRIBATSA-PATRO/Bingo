@@ -103,6 +103,20 @@ const SparklesIcon = ({ size = 16, color = "currentColor" }) => (
   </svg>
 );
 
+const SettingsIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const CloseIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '0s';
   if (seconds < 60) return `${seconds}s`;
@@ -1052,7 +1066,7 @@ export default function AdminDashboard() {
               </button>
 
               <p style={{ marginTop: '14px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'center', lineHeight: 1.4 }}>
-                💡 <em>Notice:</em> If the server was recently redeployed and <code>ADMIN_PASSWORD</code> was not configured in Render, log in with default <code>BingoAdmin2026!</code>.
+                <em>Notice:</em> If the server was recently redeployed and <code>ADMIN_PASSWORD</code> was not configured in Render, log in with default <code>BingoAdmin2026!</code>.
               </p>
             </form>
           </div>
@@ -1090,7 +1104,7 @@ export default function AdminDashboard() {
             >
               <span className="admin-db-dot yellow" />
               <span>Ephemeral Storage</span>
-              <span className="admin-db-action">Connect Free SQL ⚡</span>
+              <span className="admin-db-action">Connect Free SQL</span>
             </div>
           )}
 
@@ -1180,7 +1194,7 @@ export default function AdminDashboard() {
           boxShadow: '0 8px 24px rgba(234, 179, 8, 0.15)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <span style={{ fontSize: '1.6rem' }}>⚡</span>
+            <RefreshIcon size={24} color="#fde047" />
             <div>
               <strong style={{ color: '#fde047', fontSize: '0.94rem' }}>Render Container Reset Detected</strong>
               <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: '#fef08a', lineHeight: 1.4 }}>
@@ -1427,7 +1441,7 @@ export default function AdminDashboard() {
                   color: '#fef08a'
                 }}
               >
-                Hour {String(hoveredHour).padStart(2, '0')}:00 - {String((hoveredHour + 1) % 24).padStart(2, '0')}:00 UTC: {todayHourly[hoveredHour] || 0} visits {todayHourly[hoveredHour] > 0 && todayHourly[hoveredHour] === Math.max(...todayHourly, 0) ? '★ (Peak)' : ''}
+                Hour {String(hoveredHour).padStart(2, '0')}:00 - {String((hoveredHour + 1) % 24).padStart(2, '0')}:00 UTC: {todayHourly[hoveredHour] || 0} visits {todayHourly[hoveredHour] > 0 && todayHourly[hoveredHour] === Math.max(...todayHourly, 0) ? '(Peak)' : ''}
               </div>
             ) : (
               overview.peakHour && (
@@ -1649,7 +1663,7 @@ export default function AdminDashboard() {
                           fill={activePoint.isPeak ? '#fbbf24' : '#818cf8'}
                           textAnchor="middle"
                         >
-                          {activePoint.count} Active Visits {activePoint.isPeak ? '★ (Peak)' : ''}
+                          {activePoint.count} Active Visits {activePoint.isPeak ? '(Peak)' : ''}
                         </text>
                       </g>
                     );
@@ -1866,7 +1880,7 @@ export default function AdminDashboard() {
 
         {overview.totalPushSubscribers === 0 && (
           <div style={{ margin: '12px 0', padding: '10px 14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', fontSize: '0.82rem', color: '#93c5fd', lineHeight: 1.4 }}>
-            ℹ️ <strong>Device Registration:</strong> Players visiting the app are politely asked to allow notifications on Home/Lobby. As soon as a player clicks <em>"Allow Alerts"</em> (or installs the PWA), their device token is securely registered here and will receive your broadcast alerts.
+            <strong>Device Registration:</strong> Players visiting the app are politely asked to allow notifications on Home/Lobby. As soon as a player clicks <em>"Allow Alerts"</em> (or installs the PWA), their device token is securely registered here and will receive your broadcast alerts.
           </div>
         )}
 
@@ -1916,22 +1930,21 @@ export default function AdminDashboard() {
         </div>
 
         {/* ========================================================================= */}
-        {/* AI CONTEXTUAL CAMPAIGN STUDIO & AUTO-PILOT (100% FREE OF COST)           */}
+        {/* CAMPAIGN STUDIO & AUTO-PILOT                                              */}
         {/* ========================================================================= */}
         <div className="admin-ai-studio-card">
           <div className="admin-ai-header">
             <div className="admin-ai-title-group">
               <h4>
                 <SparklesIcon size={22} color="#c084fc" />
-                <span>AI Contextual Campaign Studio & Auto-Pilot</span>
+                <span>Campaign Studio &amp; Scheduled Auto-Pilot</span>
               </h4>
               <p className="admin-ai-subtitle">
-                Context-aware AI analyzes current situation, day, special festival/calendar events (e.g. <em>Chai Break ☕</em>, <em>Bored of work?</em>, <em>Dinner relaxation</em>), and peak player activity to draft highly engaging, friendly notifications with direct scheduled dispatch. <strong>100% Free of Cost!</strong>
+                Context-aware system analyzes current situation, day, special festival/calendar events (e.g. <em>Chai Break</em>, <em>Work Break</em>, <em>Dinner Relaxation</em>), and peak player activity to draft highly engaging, friendly notifications with direct scheduled dispatch. <strong>100% Free of Cost!</strong>
               </p>
 
               <div className="admin-ai-status-row">
                 <div className="admin-ai-situation-pill">
-                  <span>{aiContext?.timeSlotIcon || '☕'}</span>
                   <span>{aiContext?.timeSlot || 'Afternoon Chai Break Window'}</span>
                   <span>• Target: {aiContext?.targetDayName || aiContext?.dayName || 'Today'}</span>
                   <span>• Live: {aiContext?.currentTime || 'Live IST'}</span>
@@ -1939,13 +1952,12 @@ export default function AdminDashboard() {
 
                 {aiContext?.specialOccasion && (
                   <div className="admin-ai-holiday-pill">
-                    <span>🎉</span>
-                    <span>{aiContext.specialOccasion}</span>
+                    <span>{aiContext.specialOccasion.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim()}</span>
                   </div>
                 )}
 
                 <div className={`admin-ai-autopilot-badge ${aiAutoPilotConfig.enabled ? 'active' : 'idle'}`}>
-                  <span>{aiAutoPilotConfig.enabled ? '⚡ Auto-Pilot Active' : '💤 Auto-Pilot Idle'}</span>
+                  <span>{aiAutoPilotConfig.enabled ? 'Auto-Pilot Active' : 'Auto-Pilot Idle'}</span>
                 </div>
               </div>
             </div>
@@ -1958,7 +1970,7 @@ export default function AdminDashboard() {
                 disabled={isLoadingAi}
               >
                 <SparklesIcon size={16} color="#ffffff" />
-                <span>{isLoadingAi ? 'Analyzing Context...' : '✨ Generate AI Suggestions'}</span>
+                <span>{isLoadingAi ? 'Analyzing Context...' : 'Generate Suggestions'}</span>
               </button>
 
               <button
@@ -1966,27 +1978,30 @@ export default function AdminDashboard() {
                 className="admin-ai-autopilot-btn"
                 onClick={() => setShowAutoPilotModal(true)}
               >
-                <span>⚙️ Auto-Pilot Settings</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <SettingsIcon size={14} color="currentColor" />
+                  <span>Auto-Pilot Settings</span>
+                </span>
               </button>
             </div>
           </div>
 
           {aiError && (
             <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', fontSize: '0.82rem' }}>
-              ⚠️ {aiError}
+              {aiError}
             </div>
           )}
 
-          {/* AI Suggestions Cards */}
+          {/* Campaign Suggestions Cards */}
           {aiSuggestions && aiSuggestions.length > 0 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '4px 0 10px' }}>
                 <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 600 }}>
-                  🧠 Engine: <strong style={{ color: '#c084fc' }}>{aiEngineUsed || 'Built-in Smart Semantic AI (100% Free & Offline)'}</strong>
+                  Automated Scheduling Studio
                 </span>
                 {aiContext?.recommendedTriggerDesc && (
                   <span style={{ fontSize: '0.78rem', color: '#fde047', fontWeight: 600 }}>
-                    🎯 Recommended Trigger: {aiContext.recommendedTriggerDesc}
+                    Recommended Trigger: {aiContext.recommendedTriggerDesc}
                   </span>
                 )}
               </div>
@@ -1997,7 +2012,14 @@ export default function AdminDashboard() {
                   <div className="admin-ai-predictions-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span className={`admin-ai-pacing-pill ${aiPredictions.volumeStatus}`}>
-                        {aiPredictions.volumeStatus === 'optimal' ? '🟢' : aiPredictions.volumeStatus === 'moderate' ? '🟡' : '🔴'}
+                        <span style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: aiPredictions.volumeStatus === 'optimal' ? '#4ade80' : aiPredictions.volumeStatus === 'moderate' ? '#fbbf24' : '#f87171',
+                          display: 'inline-block',
+                          marginRight: '6px'
+                        }} />
                         <span>{aiPredictions.sentTodayCount} of {aiPredictions.maxOptimalDaily} Sent Today ({aiPredictions.fatigueIndex})</span>
                       </span>
 
@@ -2009,7 +2031,7 @@ export default function AdminDashboard() {
 
                     {aiWebNotes && (
                       <span style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>
-                        🌐 {aiWebNotes}
+                        {aiWebNotes}
                       </span>
                     )}
                   </div>
@@ -2037,7 +2059,7 @@ export default function AdminDashboard() {
                         <div className="admin-ai-prob-bar-fill blue" style={{ width: `${aiPredictions.viewProbability}%` }} />
                       </div>
                       <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>
-                        Glance & remember
+                        Glance &amp; remember
                       </div>
                     </div>
 
@@ -2063,20 +2085,19 @@ export default function AdminDashboard() {
                         <div className={`admin-ai-prob-bar-fill ${aiPredictions.churnRiskProbability < 1.5 ? 'green' : aiPredictions.churnRiskProbability < 4 ? 'gray' : 'red'}`} style={{ width: `${Math.min(100, aiPredictions.churnRiskProbability * 10)}%` }} />
                       </div>
                       <div style={{ fontSize: '0.68rem', color: aiPredictions.churnRiskProbability < 1.5 ? '#4ade80' : '#f87171', marginTop: '4px' }}>
-                        {aiPredictions.churnRiskProbability < 1.5 ? 'Very Low / Safe 🛡️' : 'Caution ⚠️'}
+                        {aiPredictions.churnRiskProbability < 1.5 ? 'Very Low / Safe' : 'Caution'}
                       </div>
                     </div>
                   </div>
 
                   <div className="admin-ai-advice-banner">
-                    💡 <strong>AI Strategy:</strong> {aiPredictions.advice}
+                    <strong>Pacing Strategy:</strong> {aiPredictions.advice}
                   </div>
 
                   {aiHistoryContext?.sentTodayTitles?.length > 0 && (
                     <div className="admin-ai-memory-pill">
-                      <span>🧠</span>
                       <span>
-                        Sent earlier today: <em>"{aiHistoryContext.sentTodayTitles[0]}"</em> — AI ensured 100% unique & non-repeating copy below!
+                        Sent earlier today: <em>"{aiHistoryContext.sentTodayTitles[0]}"</em> — Non-repeating unique copy ensured.
                       </span>
                     </div>
                   )}
@@ -2087,7 +2108,9 @@ export default function AdminDashboard() {
                 {aiSuggestions.map((sugg) => (
                   <div key={sugg.id} className="admin-ai-card">
                     <div>
-                      <div className="admin-ai-card-badge">{sugg.badge}</div>
+                      <div className="admin-ai-card-badge">
+                        {sugg.badge ? sugg.badge.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim() : ''}
+                      </div>
                       <h5 className="admin-ai-card-title" style={{ marginTop: '8px' }}>{sugg.title}</h5>
                       <p className="admin-ai-card-body" style={{ marginTop: '6px' }}>{sugg.message}</p>
                     </div>
@@ -2109,7 +2132,7 @@ export default function AdminDashboard() {
                           className="admin-ai-card-btn use"
                           onClick={() => handleUseAiSuggestion(sugg)}
                         >
-                          <span>Use in Form ✍️</span>
+                          <span>Use in Form</span>
                         </button>
                         <button
                           type="button"
@@ -2117,7 +2140,7 @@ export default function AdminDashboard() {
                           onClick={() => handleInstantAiSchedule(sugg)}
                           disabled={isSendingPush}
                         >
-                          <span>⚡ Auto-Schedule</span>
+                          <span>Auto-Schedule</span>
                         </button>
                       </div>
                     </div>
@@ -2137,14 +2160,14 @@ export default function AdminDashboard() {
               className={`admin-delivery-pill ${deliveryMode === 'instant' ? 'active' : ''}`}
               onClick={() => setDeliveryMode('instant')}
             >
-              ⚡ Send Immediately
+              Send Immediately
             </button>
             <button
               type="button"
               className={`admin-delivery-pill ${deliveryMode === 'scheduled' ? 'active' : ''}`}
               onClick={() => setDeliveryMode('scheduled')}
             >
-              ⏰ Schedule for Later
+              Schedule for Later
             </button>
           </div>
         </div>
@@ -2187,7 +2210,7 @@ export default function AdminDashboard() {
               <input
                 type="text"
                 className="admin-input"
-                placeholder="e.g., Weekend Tournament is Live! 🏆"
+                placeholder="e.g., Weekend Tournament is Live!"
                 value={pushTitle}
                 onChange={(e) => setPushTitle(e.target.value)}
                 required
@@ -2225,12 +2248,12 @@ export default function AdminDashboard() {
             {deliveryMode === 'scheduled' ? (
               <>
                 <ClockIcon size={16} color="#fff" />
-                <span>{isSendingPush ? 'Scheduling Notification...' : 'Schedule Automated Notification ⏰'}</span>
+                <span>{isSendingPush ? 'Scheduling Notification...' : 'Schedule Automated Notification'}</span>
               </>
             ) : (
               <>
                 <BellIcon size={16} color="#fff" />
-                <span>{isSendingPush ? 'Broadcasting via Web Push...' : 'Send Broadcast to All Devices 🚀'}</span>
+                <span>{isSendingPush ? 'Broadcasting via Web Push...' : 'Send Broadcast to All Devices'}</span>
               </>
             )}
           </button>
@@ -2374,7 +2397,7 @@ export default function AdminDashboard() {
                     <td><code>{item.url}</code></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="admin-delivered-badge">
-                        ✓ {item.deliveredCount || 0} devices
+                        {item.deliveredCount || 0} devices
                       </span>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
@@ -2384,7 +2407,7 @@ export default function AdminDashboard() {
                         const ctr = delivered > 0 ? Math.round((clicks / delivered) * 1000) / 10 : 0;
                         return (
                           <span className={`admin-metric-chip ${clicks > 0 ? 'active' : ''}`}>
-                            🖱️ {clicks} ({ctr}%)
+                            {clicks} clicks ({ctr}%)
                           </span>
                         );
                       })()}
@@ -2396,7 +2419,7 @@ export default function AdminDashboard() {
                         const convRate = clicks > 0 ? Math.round((played / clicks) * 1000) / 10 : 0;
                         return (
                           <span className={`admin-metric-chip ${played > 0 ? 'success' : ''}`}>
-                            🎮 {played} ({convRate}%)
+                            {played} played ({convRate}%)
                           </span>
                         );
                       })()}
@@ -2485,7 +2508,7 @@ export default function AdminDashboard() {
               </div>
 
               <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', fontSize: '0.8rem', color: '#93c5fd', lineHeight: 1.45 }}>
-                🛡️ <strong>Permanent Render Persistence:</strong><br />
+                <strong>Permanent Render Persistence:</strong><br />
                 Render Free Tier rebuilds containers on git updates. To make your password permanent across all future deployments, set <code>ADMIN_PASSWORD</code> in your <strong>Render Dashboard &rarr; Environment Variables</strong>.
               </div>
 
@@ -2511,7 +2534,7 @@ export default function AdminDashboard() {
           <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🐘 Connect Free PostgreSQL Database</span>
+                <span>Connect Free PostgreSQL Database</span>
               </h3>
               <button
                 type="button"
@@ -2519,7 +2542,7 @@ export default function AdminDashboard() {
                 style={{ width: 'auto', padding: '4px 10px', fontSize: '0.8rem' }}
                 onClick={() => setShowDbModal(false)}
               >
-                ✕ Close
+                Close
               </button>
             </div>
 
@@ -2530,7 +2553,7 @@ export default function AdminDashboard() {
 
             <div style={{ background: 'rgba(10, 11, 16, 0.7)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '16px', margin: '16px 0', fontSize: '0.84rem', color: '#e2e8f0', lineHeight: 1.6 }}>
               <div style={{ fontWeight: 700, color: '#4ade80', marginBottom: '8px' }}>
-                ⚡ Quick 2-Minute Setup with Neon.tech (Recommended &amp; 100% Free Forever):
+                Quick 2-Minute Setup with Neon.tech (Recommended &amp; 100% Free Forever):
               </div>
               <ol style={{ margin: '0 0 0 18px', padding: 0 }}>
                 <li style={{ marginBottom: '8px' }}>
@@ -2554,7 +2577,7 @@ export default function AdminDashboard() {
             </div>
 
             <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.25)', fontSize: '0.82rem', color: '#86efac', lineHeight: 1.45 }}>
-              ✅ That's it! As soon as you click "Save Changes" on Render, this Bingo server will automatically connect, create the database tables, and securely preserve all history and passwords permanently!
+              That's it! As soon as you click "Save Changes" on Render, this Bingo server will automatically connect, create the database tables, and securely preserve all history and passwords permanently!
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'right' }}>
@@ -2588,7 +2611,7 @@ export default function AdminDashboard() {
                 aria-label="Close"
                 style={{ width: '32px', height: '32px' }}
               >
-                ✕
+                <CloseIcon size={16} />
               </button>
             </div>
 
@@ -2616,7 +2639,7 @@ export default function AdminDashboard() {
                 <input
                   type="text"
                   className="admin-input"
-                  placeholder="e.g. Friendly Afternoon Break! ☕"
+                  placeholder="e.g. Friendly Afternoon Break!"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   required
@@ -2669,14 +2692,14 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Auto-Pilot & AI Settings Modal */}
+      {/* Auto-Pilot Settings Modal */}
       {showAutoPilotModal && (
         <div className="admin-modal-overlay" onClick={() => setShowAutoPilotModal(false)}>
           <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <SparklesIcon size={20} color="#c084fc" />
-                <span>AI Auto-Pilot & Engine Settings</span>
+                <span>Auto-Pilot &amp; Scheduler Settings</span>
               </h3>
               <button
                 type="button"
@@ -2686,7 +2709,7 @@ export default function AdminDashboard() {
                 aria-label="Close"
                 style={{ width: '32px', height: '32px' }}
               >
-                ✕
+                <CloseIcon size={16} />
               </button>
             </div>
 
@@ -2724,9 +2747,9 @@ export default function AdminDashboard() {
               {/* 100% Free Guarantee Info */}
               <div style={{ padding: '14px 16px', borderRadius: '12px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', marginBottom: '16px', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.45 }}>
                 <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>
-                  ✨ 100% Free of Cost Guaranteed:
+                  100% Free of Cost Guaranteed:
                 </div>
-                By default, Bingo runs the <strong>Built-in Smart Semantic AI Engine</strong> directly on the server with 0ms latency, zero credit cards, and zero external costs.
+                By default, Bingo runs the <strong>built-in campaign generator</strong> directly on the server with 0ms latency, zero credit cards, and zero external costs.
                 <div style={{ marginTop: '6px' }}>
                   You can optionally enter a <strong>Google Gemini API Key</strong> below or add <code>GEMINI_API_KEY</code> to your environment variables (e.g. in <code>server/.env</code> or your Render dashboard). Google AI Studio provides 15 free requests/min with zero billing required!
                 </div>
@@ -2738,8 +2761,8 @@ export default function AdminDashboard() {
                   <span>Gemini API Key (Optional)</span>
                   <span style={{ fontSize: '0.74rem', color: aiAutoPilotConfig.hasEnvKey ? '#4ade80' : '#a5b4fc', fontWeight: aiAutoPilotConfig.hasEnvKey ? 600 : 400 }}>
                     {aiAutoPilotConfig.hasEnvKey
-                      ? '⚡ Active via Environment Variable (GEMINI_API_KEY)'
-                      : 'Leave blank to use built-in free AI'}
+                      ? 'Active via Environment Variable (GEMINI_API_KEY)'
+                      : 'Leave blank to use built-in generator'}
                   </span>
                 </label>
                 <input

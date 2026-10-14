@@ -76,7 +76,7 @@ for (const envCandidate of [
   }
 }
 
-const CURRENT_VERSION = '2.5.6';
+const CURRENT_VERSION = '2.5.7';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()
