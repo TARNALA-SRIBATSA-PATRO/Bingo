@@ -21,27 +21,40 @@ import {
   getBackupPayload,
   schedulePushNotification,
   getScheduledNotifications,
-  cancelScheduledNotification
+  cancelScheduledNotification,
+  excludeAdminUser
 } from './analyticsStore.js';
 import {
   handleAdminLogin,
   handleAdminLogout,
   handleAdminChangePassword,
   requireAdminAuth,
+  verifyAdminToken,
   ADMIN_PATH
 } from './adminAuth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.9';
+const CURRENT_VERSION = '2.4.0';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791966000000
+  buildTime: 1791968000000
 });
 
 const app = express();
 app.disable('x-powered-by');
+
+// Enforce strict security headers (Anti-sniffing, Anti-clickjacking, HSTS, Referrer Policy)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+});
 
 // Enable Gzip/Deflate compression for all HTTP responses (reduces bandwidth by ~70%)
 app.use(compression({
@@ -812,9 +825,15 @@ app.get(['/admin', '/dashboard', '/cpanel', '/login', '/wp-admin'], (req, res) =
   res.status(404).send('Not found');
 });
 
-// Analytics Ingestion APIs (Lightweight, rate-protected)
+// Analytics Ingestion APIs (Lightweight, rate-protected, excludes admin)
 app.post('/api/analytics/heartbeat', (req, res) => {
-  const { userId, isPwa, lifetimeBotStats } = req.body || {};
+  const { userId, isPwa, lifetimeBotStats, isAdmin } = req.body || {};
+  const adminHeader = req.headers['x-admin-token'];
+  // If request is from admin or contains admin session token, ignore and purge from player metrics
+  if (isAdmin || (adminHeader && verifyAdminToken(adminHeader))) {
+    if (userId) excludeAdminUser(userId);
+    return res.json({ success: true, ignored: true });
+  }
   const userAgent = req.headers['user-agent'] || '';
   recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats });
   res.json({ success: true });
@@ -909,11 +928,6 @@ app.post('/api/admin/backup/restore', requireAdminAuth, (req, res) => {
   }
   const restored = restoreBackupData(backupData);
   res.json({ success: restored, stats: getAdminDashboardStats() });
-});
-
-// Return the obfuscated admin route path only to clients (so SPA router can mount it)
-app.get('/api/admin/config-path', (req, res) => {
-  res.json({ adminPath: ADMIN_PATH });
 });
 
 app.get('*', (req, res) => {

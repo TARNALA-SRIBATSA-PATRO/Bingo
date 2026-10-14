@@ -1,11 +1,23 @@
 import crypto from 'crypto';
-import { verifyPassword, setPassword } from './analyticsStore.js';
+import { verifyPassword, setPassword, excludeAdminUser } from './analyticsStore.js';
 
 // Obfuscated Admin Path (customizable via env var or secure fallback)
 export const ADMIN_PATH = process.env.ADMIN_PATH || '/sys-admin-panel-92f7';
 
 // In-memory active admin sessions: token -> { createdAt, expiresAt, ip }
 const activeSessions = new Map();
+
+// Helper to verify admin token
+export function verifyAdminToken(token) {
+  if (!token) return false;
+  const session = activeSessions.get(token);
+  if (!session) return false;
+  if (Date.now() > session.expiresAt) {
+    activeSessions.delete(token);
+    return false;
+  }
+  return true;
+}
 
 // In-memory failed login tracking per IP: ip -> { attempts: number, lockedUntil: timestamp }
 const loginAttempts = new Map();
@@ -87,6 +99,12 @@ export function handleAdminLogin(req, res) {
 
   // Password correct: reset failed attempts for this IP
   loginAttempts.delete(ip);
+
+  // If client provided admin device ID, immediately purge from player tracking
+  const { adminUserId } = req.body || {};
+  if (adminUserId) {
+    excludeAdminUser(adminUserId);
+  }
 
   // Generate secure 256-bit session token
   const token = crypto.randomBytes(32).toString('hex');

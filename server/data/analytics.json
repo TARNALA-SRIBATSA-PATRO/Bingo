@@ -1,31 +1,144 @@
 {
-  "users": {},
-  "hourlyActivity": {},
-  "dailyUniqueUsers": {},
+  "users": {
+    "usr_58f24b16717c5c496d3577f1": {
+      "id": "usr_58f24b16717c5c496d3577f1",
+      "isPwa": false,
+      "visits": 2,
+      "botStats": {
+        "pro": {
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "beginner": {
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "intermediate": {
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "totalMatches": 0
+      },
+      "lastSeen": 1791966153636,
+      "firstSeen": 1791966100136,
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "installedAt": null
+    },
+    "usr_64955ec13e41797149dcbbf2": {
+      "id": "usr_64955ec13e41797149dcbbf2",
+      "isPwa": true,
+      "visits": 2,
+      "botStats": {
+        "pro": {
+          "total": 0,
+          "botWins": 0,
+          "userWins": 0
+        },
+        "beginner": {
+          "total": 8,
+          "botWins": 2,
+          "userWins": 6
+        },
+        "intermediate": {
+          "total": 7,
+          "botWins": 2,
+          "userWins": 3
+        },
+        "totalMatches": 15
+      },
+      "lastSeen": 1791966178815,
+      "firstSeen": 1791966170593,
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36",
+      "installedAt": 1791966170593
+    }
+  },
+  "hourlyActivity": {
+    "2026-10-14": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "dailyUniqueUsers": {
+    "2026-10-14": [
+      "usr_58f24b16717c5c496d3577f1",
+      "usr_64955ec13e41797149dcbbf2"
+    ]
+  },
   "botStats": {
-    "totalMatches": 0,
+    "totalMatches": 15,
     "beginner": {
-      "total": 0,
-      "userWins": 0,
-      "botWins": 0
+      "total": 8,
+      "botWins": 2,
+      "userWins": 6
     },
     "intermediate": {
-      "total": 0,
-      "userWins": 0,
-      "botWins": 0
+      "total": 7,
+      "botWins": 2,
+      "userWins": 3
     },
     "pro": {
       "total": 0,
-      "userWins": 0,
-      "botWins": 0
+      "botWins": 0,
+      "userWins": 0
     }
   },
   "multiplayerStats": {
     "roomsCreated": 0,
     "matchesCompleted": 0
   },
-  "pushSubscriptions": {},
+  "pushSubscriptions": {
+    "https://fcm.googleapis.com/fcm/send/dBWA6pNLZRw:APA91bHQLkXzFBONE9RSm4NqySXhz7d0AsJgaNzM9r9pOnZozXYG973hlPIYSFHqJDrvswNsXBtmewzj84yAU3dKGyrIpAidnfeyV_jAc7s_A-lW7IPz1yFUt-uway41Kuebc3K9_Gct": {
+      "userId": "usr_58f24b16717c5c496d3577f1",
+      "createdAt": 1791966156279,
+      "subscription": {
+        "keys": {
+          "auth": "6uPa_DZAsUNCs5beTRBG2g",
+          "p256dh": "BLfD7GUlFqeYyOxlTNJH0frE5O7kecEATdjCRoDFddsxtJqebfyCVMcyeTYYOuJFCq_Hl2kHalpWVdJsO7LRDYw"
+        },
+        "endpoint": "https://fcm.googleapis.com/fcm/send/dBWA6pNLZRw:APA91bHQLkXzFBONE9RSm4NqySXhz7d0AsJgaNzM9r9pOnZozXYG973hlPIYSFHqJDrvswNsXBtmewzj84yAU3dKGyrIpAidnfeyV_jAc7s_A-lW7IPz1yFUt-uway41Kuebc3K9_Gct",
+        "expirationTime": null
+      }
+    },
+    "https://fcm.googleapis.com/fcm/send/e7FvykfSsu0:APA91bEl39L-tBoylSMc7RKBpBQHcKTtICBQJV5Qij_p97g-Bnpcjz39bMYlX3ACqaDQ0oD-yR_gxlBqbcIOfaZgejHjBy0J5II0j726OTV2pP6Uuobef_fFe8SdwmKdshAMIhQuL5uU": {
+      "userId": "usr_64955ec13e41797149dcbbf2",
+      "createdAt": 1791966181330,
+      "subscription": {
+        "keys": {
+          "auth": "gMI20jyZWd15OHmdGhjqmw",
+          "p256dh": "BK1oVPdLesPEo2Wv_LwTfxm7nkxtJZsDM_ZH4_oTB2RAdSPoOQpODh5lt3L2DUsCSBM7T8IOyRrdRpezwJWIOLg"
+        },
+        "endpoint": "https://fcm.googleapis.com/fcm/send/e7FvykfSsu0:APA91bEl39L-tBoylSMc7RKBpBQHcKTtICBQJV5Qij_p97g-Bnpcjz39bMYlX3ACqaDQ0oD-yR_gxlBqbcIOfaZgejHjBy0J5II0j726OTV2pP6Uuobef_fFe8SdwmKdshAMIhQuL5uU",
+        "expirationTime": null
+      }
+    }
+  },
   "notificationsHistory": [],
+  "scheduledNotifications": [],
   "adminSecurity": {
     "passwordHash": "3d0800cd480674bf618736f8a5dbfa8306716b88063be6d1d1f8b180094a487464b4f1984d8a09962345c895621a38bca2f7671d47362df7862e0ef591ceae11",
     "passwordSalt": "2cba516423be70efcd785b0b1d547306",

@@ -287,9 +287,36 @@ export function recomputeAggregatedBotStats() {
   memoryStore.botStats.totalMatches = Math.max(memoryStore.botStats.totalMatches || 0, computedTotal);
 }
 
+// Exclude admin user device from player counts and statistics
+export function excludeAdminUser(userId) {
+  if (!userId) return;
+  let changed = false;
+  if (memoryStore.users[userId]) {
+    delete memoryStore.users[userId];
+    changed = true;
+  }
+  const todayKey = getTodayKey();
+  if (memoryStore.dailyUniqueUsers[todayKey]) {
+    const initLen = memoryStore.dailyUniqueUsers[todayKey].length;
+    memoryStore.dailyUniqueUsers[todayKey] = memoryStore.dailyUniqueUsers[todayKey].filter(id => id !== userId);
+    if (memoryStore.dailyUniqueUsers[todayKey].length !== initLen) {
+      changed = true;
+    }
+  }
+  if (changed) {
+    flushToDisk();
+    if (isDbConnected()) {
+      saveKeyToDatabase('users', memoryStore.users);
+      saveKeyToDatabase('daily_unique_users', memoryStore.dailyUniqueUsers);
+    }
+    console.log(`[AnalyticsStore] Successfully purged admin device ${userId} from player metrics.`);
+  }
+}
+
 // Record User Heartbeat / Visit
 export function recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats }) {
   if (!userId) return;
+  if (memoryStore.users[userId]?.isAdmin) return;
   const now = Date.now();
   const todayKey = getTodayKey();
   const currentHour = new Date().getUTCHours();
@@ -576,7 +603,7 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
   const fiveMinutesAgo = now - 5 * 60 * 1000;
   const todayKey = getTodayKey();
 
-  const allUsersList = Object.values(memoryStore.users);
+  const allUsersList = Object.values(memoryStore.users).filter(u => u && !u.isAdmin);
   const totalUsers = allUsersList.length;
 
   // Active right now (heartbeat within 5 minutes)
@@ -755,7 +782,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.3.9',
+    version: '2.4.0',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

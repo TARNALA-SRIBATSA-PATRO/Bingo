@@ -90,9 +90,21 @@ export function isInstalledPwa() {
   }
 }
 
+// Check if currently on the admin portal or logged in as admin (never count admin as player)
+export function isCurrentSessionAdmin() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('admin') || path.includes('sys-admin-panel')) return true;
+    if (sessionStorage.getItem('bingo_admin_token') || sessionStorage.getItem('bingo_is_admin')) return true;
+  } catch {}
+  return false;
+}
+
 // Send active heartbeat (carries persistent lifetime bot stats so server is auto-healed on redeploy)
 export async function sendHeartbeat() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isCurrentSessionAdmin()) return;
   const userId = getOrCreateSecretUserId();
   const isPwa = isInstalledPwa();
   const lifetimeBotStats = getLifetimeBotStats();
@@ -251,7 +263,8 @@ export async function registerPushNotifications() {
 
 // Initialize listeners
 export function initAnalytics() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return () => {};
+  if (isCurrentSessionAdmin()) return () => {};
 
   getOrCreateSecretUserId();
   sendHeartbeat();

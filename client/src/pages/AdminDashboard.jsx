@@ -67,7 +67,15 @@ const RefreshIcon = ({ size = 16 }) => (
   </svg>
 );
 
+import { getOrCreateSecretUserId } from '../services/analytics';
+
 export default function AdminDashboard() {
+  // Mark session as admin so this device is never counted as an active player
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('bingo_is_admin', '1');
+    } catch {}
+  }, []);
   const [token, setToken] = useState(() => {
     try {
       return sessionStorage.getItem('bingo_admin_token') || '';
@@ -361,10 +369,11 @@ export default function AdminDashboard() {
     setAuthError('');
 
     try {
+      const adminUserId = getOrCreateSecretUserId();
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput })
+        body: JSON.stringify({ password: passwordInput, adminUserId })
       });
 
       const data = await res.json();
