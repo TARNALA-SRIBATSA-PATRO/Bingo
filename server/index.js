@@ -10,7 +10,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.static(path.join(__dirname, '../client/dist')));
+app.use(express.static(path.join(__dirname, '../client/dist'), {
+  setHeaders: (res, filePath) => {
+    if (
+      filePath.endsWith('sw.js') ||
+      filePath.endsWith('version.json') ||
+      filePath.endsWith('index.html')
+    ) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 app.use(cors());
 
 const httpServer = createServer(app);
@@ -666,7 +678,20 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
+app.get('/api/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.json({
+    version: '2.2.0',
+    buildTime: Date.now()
+  });
+});
+
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 

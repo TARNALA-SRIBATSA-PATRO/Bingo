@@ -5,6 +5,7 @@ import { AudioProvider } from './context/AudioContext';
 import Notification from './components/Notification';
 import GlobalModals from './components/GlobalModals';
 import InstallPwaButton from './components/InstallPwaButton';
+import UpdateManager from './components/UpdateManager';
 import Footer from './components/Footer';
 import LandingPage from './pages/LandingPage';
 import HowToPlay from './pages/HowToPlay';
@@ -21,6 +22,7 @@ function App() {
         <SocketProvider>
           <GameProvider>
             <div className="app-wrapper">
+              <UpdateManager />
               <Notification />
               <GlobalModals />
               <InstallPwaButton />
