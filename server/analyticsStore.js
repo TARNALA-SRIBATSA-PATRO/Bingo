@@ -1180,7 +1180,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.5.1',
+    version: '2.5.2',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

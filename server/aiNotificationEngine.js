@@ -769,8 +769,14 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   const targetHour = targetIST.getUTCHours();
   const targetSlot = getSlotForHour(targetHour);
 
-  const specialDay = detectSpecialOccasion(targetDateObj) || context.specialDay;
-  const { dayName, isWeekend } = context;
+  // CRITICAL FIX: Derive day name & weekend status from the TARGET TRIGGER DATE (targetIST),
+  // NEVER from current moment (context), so weekday names in title/message strictly match the scheduled date!
+  const targetDayIndex = targetIST.getUTCDay();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayName = dayNames[targetDayIndex];
+  const isWeekend = targetDayIndex === 0 || targetDayIndex === 6;
+
+  const specialDay = detectSpecialOccasion(targetDateObj);
 
   // Sent History Memory check to prevent duplicate copies
   const sentTitles = (historyData.sentTodayList || []).map(s => (s.title || '').toLowerCase());
@@ -941,7 +947,11 @@ async function callGeminiApi({ apiKey, context, stats, historyData = {} }) {
   const targetIST = new Date(triggerTimeMs + istOffset);
   const targetHour = targetIST.getUTCHours();
   const targetSlot = getSlotForHour(targetHour);
-  const detectedFestival = detectSpecialOccasion(targetDateObj) || context.specialDay;
+  const detectedFestival = detectSpecialOccasion(targetDateObj);
+
+  const targetDayIndex = targetIST.getUTCDay();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const targetDayName = dayNames[targetDayIndex];
 
   // Sent History Memory for prompt
   const sentToday = historyData.sentTodayList || [];
@@ -953,18 +963,19 @@ async function callGeminiApi({ apiKey, context, stats, historyData = {} }) {
 You are an expert casual gaming community copywriter for "Bingo Online" (a free, real-time multiplayer 5x5 Bingo web app with bot mode and private friend rooms).
 
 Live Context:
-- Current Indian Date: ${context.istDateString}
-- Current Indian Time: ${context.istTimeString}
-- Target Scheduled Trigger Time: ${targetDateString} at ${targetTimeString} (Strictly 2+ hours in advance)
+- Current Indian Date & Day: ${context.istDateString} (${context.dayName})
+- Current Indian Time: ${context.istTimeString} IST
+- Target Scheduled Trigger Date & Day: ${targetDateString} (${targetDayName})
+- Target Scheduled Trigger Time: ${targetTimeString} IST (Strictly 2+ hours in advance)
 - Target Slot: ${targetSlot.slotTitle} (${targetSlot.slotKey})
-- Detected Indian Festival / Occasion: ${detectedFestival ? `${detectedFestival.name} (${detectedFestival.wish})` : 'Regular day'}
+- Detected Indian Festival / Occasion on Target Date: ${detectedFestival ? `${detectedFestival.name} (${detectedFestival.wish})` : 'Regular day'}
 - Today's Messages Already Sent:
 ${sentSummary}
 
 STRICT INSTRUCTIONS:
-1. LIVE FESTIVAL & EVENT AWARENESS: First analyze whether today or tomorrow is any festival (e.g. Diwali, Dhanteras, Chhath Puja, Bhai Dooj, Eid, Holi, Christmas, Independence Day, etc.) or major sports event (e.g. India cricket match). If yes and the target time is in the morning/day, lead with an authentic, warm, heartfelt festival greeting & wish (e.g. "Shubh Dhanteras! May health & wealth brighten your home 🪔✨").
+1. LIVE FESTIVAL & EVENT AWARENESS: First analyze whether the target trigger date (${targetDayName}, ${targetDateString}) has any festival (e.g. Diwali, Dhanteras, Chhath Puja, Bhai Dooj, Eid, Holi, Christmas, Independence Day, etc.) or major sports event. If yes and the target time is in the morning/day, lead with an authentic, warm, heartfelt festival greeting & wish.
 2. ANTI-REPETITION MANDATE: Do NOT repeat, paraphrase, or mimic the copy or hooks from today's previous messages listed above. Every message must be 100% unique, fresh, funny, casual, game-friendly, and attractive!
-3. TARGET TIME ACCURACY: The message MUST match the TARGET TRIGGER TIME (${targetTimeString}). For example, if target time is 8:15 PM, talk about dinner relaxation, couch chill, or beating the bot before bed. NEVER talk about 4 PM tea if scheduled for the evening!
+3. TARGET TIME & DAY OF THE WEEK ACCURACY: The message MUST strictly match the TARGET TRIGGER TIME AND DAY (${targetDayName}, ${targetDateString} at ${targetTimeString}). If you mention any day of the week in title or message (e.g. "${targetDayName} morning", "${targetDayName} chill"), it MUST be "${targetDayName}" (the target trigger day), NEVER today's day (${context.dayName})!
 4. CONSTRAINTS: Title under 40 characters. Message under 120 characters. Include 1-2 lively emojis in both title and message.
 
 Return STRICTLY a JSON object matching this schema:
@@ -1035,7 +1046,7 @@ Return STRICTLY a JSON object matching this schema:
       if (!parsed || !Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) continue;
 
       return {
-        webAnalysisNotes: parsed.webAnalysisNotes || (detectedFestival ? `Live calendar match: ${detectedFestival.name}` : `Standard active day in ${context.dayName}`),
+        webAnalysisNotes: parsed.webAnalysisNotes || (detectedFestival ? `Live calendar match: ${detectedFestival.name}` : `Standard active day in ${targetDayName}`),
         suggestions: parsed.suggestions.map((s, idx) => ({
           id: `ai_gemini_${idx + 1}`,
           category: s.category || 'AI Generated',
@@ -1074,7 +1085,13 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
   const targetHour = targetIST.getUTCHours();
   const targetSlot = getSlotForHour(targetHour);
 
-  const detectedFestival = detectSpecialOccasion(targetDateObj) || context.specialDay;
+  // Derive target trigger date's day of week & weekend status
+  const targetDayIndex = targetIST.getUTCDay();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const targetDayName = dayNames[targetDayIndex];
+  const targetIsWeekend = targetDayIndex === 0 || targetDayIndex === 6;
+
+  const detectedFestival = detectSpecialOccasion(targetDateObj);
 
   // Run predictive probability modeling
   const predictions = analyzeNotificationPacingAndProbabilities({
@@ -1116,10 +1133,14 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
       timeSlot: targetSlot.slotTitle,
       timeSlotKey: targetSlot.slotKey,
       timeSlotIcon: targetSlot.slotIcon,
-      dayName: context.dayName,
-      isWeekend: context.isWeekend,
+      dayName: targetDayName,
+      isWeekend: targetIsWeekend,
       currentTime: context.istTimeString,
       currentDate: context.istDateString,
+      currentDayName: context.dayName,
+      targetDayName,
+      targetDate: targetDateString,
+      targetTime: targetTimeString,
       specialOccasion: detectedFestival ? detectedFestival.name : null,
       specialWish: detectedFestival ? detectedFestival.wish : null,
       recommendedTriggerMs: triggerTimeMs,

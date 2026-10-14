@@ -1902,15 +1902,15 @@ export default function AdminDashboard() {
                 <span>AI Contextual Campaign Studio & Auto-Pilot</span>
               </h4>
               <p className="admin-ai-subtitle">
-                Context-aware AI analyzes current situation, day, special festival/calendar events (e.g. <em>Chai Break ☕</em>, <em>Bored of work?</em>, <em>Dinner relaxation</em>), and peak player activity to draft highly engaging, friendly notifications with automatic advance notices. <strong>100% Free of Cost!</strong>
+                Context-aware AI analyzes current situation, day, special festival/calendar events (e.g. <em>Chai Break ☕</em>, <em>Bored of work?</em>, <em>Dinner relaxation</em>), and peak player activity to draft highly engaging, friendly notifications with direct scheduled dispatch. <strong>100% Free of Cost!</strong>
               </p>
 
               <div className="admin-ai-status-row">
                 <div className="admin-ai-situation-pill">
                   <span>{aiContext?.timeSlotIcon || '☕'}</span>
                   <span>{aiContext?.timeSlot || 'Afternoon Chai Break Window'}</span>
-                  <span>• {aiContext?.dayName || 'Today'}</span>
-                  <span>• {aiContext?.currentTime || 'Live IST'}</span>
+                  <span>• Target: {aiContext?.targetDayName || aiContext?.dayName || 'Today'}</span>
+                  <span>• Live: {aiContext?.currentTime || 'Live IST'}</span>
                 </div>
 
                 {aiContext?.specialOccasion && (
