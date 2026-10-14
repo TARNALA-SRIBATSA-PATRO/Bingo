@@ -34,10 +34,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.8';
+const CURRENT_VERSION = '2.3.9';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791963000000
+  buildTime: 1791966000000
 });
 
 const app = express();

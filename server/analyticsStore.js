@@ -3,12 +3,26 @@ import path from 'path';
 import crypto from 'crypto';
 import webpush from 'web-push';
 import { fileURLToPath } from 'url';
+import {
+  initDatabase,
+  isDbConnected,
+  getDbError,
+  loadAllFromDatabase,
+  saveKeyToDatabase,
+  saveMultipleKeysToDatabase
+} from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'analytics.json');
+
+// Permanent stable VAPID keys (can be overridden via environment variables)
+const DEFAULT_VAPID_KEYS = {
+  publicKey: process.env.VAPID_PUBLIC_KEY || 'BFj-guGTD6_nMN0vKXE-AA0-AAJjqmbfGR-URs6sX_oH1E_kaj9fEuTe59JgKVi6xmLdpG3UztFrlU3BlHluPyE',
+  privateKey: process.env.VAPID_PRIVATE_KEY || 'r-YnmWDQor4RUJQ-U4KQNsjV5ESQvYS67ZD_zPMrRpM'
+};
 
 // Default initial state
 const defaultState = {
@@ -31,13 +45,14 @@ const defaultState = {
   adminSecurity: {
     passwordHash: null,
     passwordSalt: null,
-    vapidKeys: null
+    vapidKeys: DEFAULT_VAPID_KEYS
   }
 };
 
 let memoryStore = { ...defaultState };
 let isDirty = false;
 let flushTimer = null;
+const dirtyDbKeys = new Set();
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -48,8 +63,9 @@ if (!fs.existsSync(DATA_DIR)) {
   }
 }
 
-// Load persisted state from disk
-function loadStore() {
+// Load persisted state from disk and sync with PostgreSQL if available
+async function loadStore() {
+  // 1. Synchronously load local disk cache if available
   if (fs.existsSync(DATA_FILE)) {
     try {
       const raw = fs.readFileSync(DATA_FILE, 'utf8');
@@ -62,35 +78,77 @@ function loadStore() {
         scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
-      console.log('[AnalyticsStore] State loaded from disk successfully.');
+      console.log('[AnalyticsStore] Local cache loaded from disk.');
     } catch (e) {
-      console.warn('[AnalyticsStore] Error loading analytics file, initializing fresh store:', e);
+      console.warn('[AnalyticsStore] Error reading local analytics cache:', e);
       memoryStore = { ...defaultState };
     }
   } else {
     memoryStore = { ...defaultState };
   }
 
-  // Ensure VAPID keys exist
+  // 2. Ensure stable VAPID keys exist
   if (!memoryStore.adminSecurity.vapidKeys) {
-    const keys = webpush.generateVAPIDKeys();
-    memoryStore.adminSecurity.vapidKeys = keys;
-    isDirty = true;
+    memoryStore.adminSecurity.vapidKeys = DEFAULT_VAPID_KEYS;
     flushToDisk();
   }
 
-  // Configure web-push
+  // 3. Configure web-push
   if (memoryStore.adminSecurity.vapidKeys) {
-    webpush.setVapidDetails(
-      'mailto:admin@bingo-online.app',
-      memoryStore.adminSecurity.vapidKeys.publicKey,
-      memoryStore.adminSecurity.vapidKeys.privateKey
-    );
+    try {
+      webpush.setVapidDetails(
+        'mailto:admin@bingo-online.app',
+        memoryStore.adminSecurity.vapidKeys.publicKey,
+        memoryStore.adminSecurity.vapidKeys.privateKey
+      );
+    } catch (err) {
+      console.warn('[AnalyticsStore] Web push setup warning:', err.message);
+    }
   }
 
-  // Ensure default admin password hash exists if not already set
+  // 4. Ensure default admin password hash exists initially if absent
   if (!memoryStore.adminSecurity.passwordHash) {
     setPassword(process.env.ADMIN_PASSWORD || 'BingoAdmin2026!');
+  }
+
+  // 5. Connect and synchronize with PostgreSQL Cloud Database if DATABASE_URL is set
+  try {
+    const dbInit = await initDatabase();
+    if (dbInit.connected) {
+      const dbRows = await loadAllFromDatabase();
+      if (dbRows && Object.keys(dbRows).length > 0) {
+        if (dbRows.users) memoryStore.users = { ...memoryStore.users, ...dbRows.users };
+        if (dbRows.hourly_activity) memoryStore.hourlyActivity = { ...memoryStore.hourlyActivity, ...dbRows.hourly_activity };
+        if (dbRows.daily_unique_users) memoryStore.dailyUniqueUsers = { ...memoryStore.dailyUniqueUsers, ...dbRows.daily_unique_users };
+        if (dbRows.bot_stats) memoryStore.botStats = { ...defaultState.botStats, ...dbRows.bot_stats };
+        if (dbRows.multiplayer_stats) memoryStore.multiplayerStats = { ...defaultState.multiplayerStats, ...dbRows.multiplayer_stats };
+        if (dbRows.push_subscriptions) memoryStore.pushSubscriptions = { ...memoryStore.pushSubscriptions, ...dbRows.push_subscriptions };
+        if (dbRows.notifications_history) memoryStore.notificationsHistory = Array.isArray(dbRows.notifications_history) ? dbRows.notifications_history : [];
+        if (dbRows.scheduled_notifications) memoryStore.scheduledNotifications = Array.isArray(dbRows.scheduled_notifications) ? dbRows.scheduled_notifications : [];
+        if (dbRows.admin_security && dbRows.admin_security.passwordHash) {
+          memoryStore.adminSecurity = { ...defaultState.adminSecurity, ...dbRows.admin_security };
+        }
+
+        recomputeAggregatedBotStats();
+        flushToDisk();
+        console.log('[AnalyticsStore] State successfully loaded and synced from PostgreSQL cloud database!');
+      } else {
+        console.log('[AnalyticsStore] Initializing fresh PostgreSQL store with current data...');
+        await saveMultipleKeysToDatabase({
+          users: memoryStore.users,
+          hourly_activity: memoryStore.hourlyActivity,
+          daily_unique_users: memoryStore.dailyUniqueUsers,
+          bot_stats: memoryStore.botStats,
+          multiplayer_stats: memoryStore.multiplayerStats,
+          push_subscriptions: memoryStore.pushSubscriptions,
+          notifications_history: memoryStore.notificationsHistory,
+          scheduled_notifications: memoryStore.scheduledNotifications,
+          admin_security: memoryStore.adminSecurity
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[AnalyticsStore] Error during PostgreSQL cloud sync:', err.message);
   }
 }
 
@@ -106,14 +164,44 @@ function flushToDisk() {
   }
 }
 
+// Save dirty keys to PostgreSQL cloud database
+async function flushStore() {
+  flushToDisk();
+  if (isDbConnected()) {
+    try {
+      const keys = dirtyDbKeys.size > 0
+        ? Array.from(dirtyDbKeys)
+        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'admin_security'];
+      dirtyDbKeys.clear();
+
+      for (const k of keys) {
+        if (k === 'users') await saveKeyToDatabase('users', memoryStore.users);
+        else if (k === 'hourly_activity') await saveKeyToDatabase('hourly_activity', memoryStore.hourlyActivity);
+        else if (k === 'daily_unique_users') await saveKeyToDatabase('daily_unique_users', memoryStore.dailyUniqueUsers);
+        else if (k === 'bot_stats') await saveKeyToDatabase('bot_stats', memoryStore.botStats);
+        else if (k === 'multiplayer_stats') await saveKeyToDatabase('multiplayer_stats', memoryStore.multiplayerStats);
+        else if (k === 'push_subscriptions') await saveKeyToDatabase('push_subscriptions', memoryStore.pushSubscriptions);
+        else if (k === 'notifications_history') await saveKeyToDatabase('notifications_history', memoryStore.notificationsHistory);
+        else if (k === 'scheduled_notifications') await saveKeyToDatabase('scheduled_notifications', memoryStore.scheduledNotifications);
+        else if (k === 'admin_security') await saveKeyToDatabase('admin_security', memoryStore.adminSecurity);
+      }
+    } catch (err) {
+      console.error('[AnalyticsStore] Error saving dirty keys to PostgreSQL:', err.message);
+    }
+  }
+}
+
 // Debounced save
-function scheduleFlush() {
+function scheduleFlush(dbKey) {
   isDirty = true;
+  if (dbKey) {
+    dirtyDbKeys.add(dbKey);
+  }
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
-      flushToDisk();
-    }, 4000);
+      flushStore();
+    }, 3000);
   }
 }
 
@@ -123,9 +211,17 @@ export function setPassword(plainPassword) {
   const hash = crypto.scryptSync(plainPassword, salt, 64).toString('hex');
   memoryStore.adminSecurity.passwordSalt = salt;
   memoryStore.adminSecurity.passwordHash = hash;
-  scheduleFlush();
+  flushToDisk();
+  if (isDbConnected()) {
+    saveKeyToDatabase('admin_security', memoryStore.adminSecurity).catch(err => {
+      console.error('[AnalyticsStore] Error saving new password to database:', err);
+    });
+  } else {
+    scheduleFlush('admin_security');
+  }
   return true;
 }
+
 
 export function verifyPassword(plainPassword) {
   if (!plainPassword || typeof plainPassword !== 'string') return false;
@@ -590,7 +686,13 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
     todayHourlyActivity: todayHourly,
     activityTimeline: timelineDays,
     botOverview,
-    multiplayerStats: memoryStore.multiplayerStats
+    multiplayerStats: memoryStore.multiplayerStats,
+    persistenceStatus: {
+      type: isDbConnected() ? 'postgres' : 'ephemeral',
+      isConnected: isDbConnected(),
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      dbError: getDbError()
+    }
   };
 }
 
@@ -653,7 +755,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.3.8',
+    version: '2.3.9',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,
@@ -747,6 +849,21 @@ export function restoreBackupData(backupData) {
   // Re-aggregate and flush to disk
   recomputeAggregatedBotStats();
   flushToDisk();
+
+  // Also sync all restored data to PostgreSQL cloud database
+  if (isDbConnected()) {
+    saveMultipleKeysToDatabase({
+      users: memoryStore.users,
+      hourly_activity: memoryStore.hourlyActivity,
+      daily_unique_users: memoryStore.dailyUniqueUsers,
+      bot_stats: memoryStore.botStats,
+      multiplayer_stats: memoryStore.multiplayerStats,
+      push_subscriptions: memoryStore.pushSubscriptions,
+      notifications_history: memoryStore.notificationsHistory,
+      scheduled_notifications: memoryStore.scheduledNotifications,
+      admin_security: memoryStore.adminSecurity
+    }).catch(err => console.error('[Restore] PostgreSQL sync error:', err.message));
+  }
   return true;
 }
 

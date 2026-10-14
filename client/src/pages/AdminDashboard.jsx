@@ -114,6 +114,7 @@ export default function AdminDashboard() {
 
   // Password Modal
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showDbModal, setShowDbModal] = useState(false);
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
@@ -598,6 +599,23 @@ export default function AdminDashboard() {
             <span className="admin-live-dot" />
             <span>{overview.currentlyActiveUsers || 0} Online Right Now</span>
           </div>
+
+          {stats?.persistenceStatus?.isConnected ? (
+            <div className="admin-db-badge connected" title="PostgreSQL Cloud Database Connected - Permanent Storage active across all rebuilds and deploys">
+              <span className="admin-db-dot green" />
+              <span>PostgreSQL Active (Permanent)</span>
+            </div>
+          ) : (
+            <div
+              className="admin-db-badge ephemeral"
+              onClick={() => setShowDbModal(true)}
+              title="Running on Render Free Tier ephemeral storage. Click for instructions to connect a Free PostgreSQL Database."
+            >
+              <span className="admin-db-dot yellow" />
+              <span>Ephemeral Storage</span>
+              <span className="admin-db-action">Connect Free SQL ⚡</span>
+            </div>
+          )}
         </div>
 
         <div className="admin-header-actions">
@@ -1367,6 +1385,71 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Free Cloud PostgreSQL Connection Modal */}
+      {showDbModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowDbModal(false)}>
+          <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🐘 Connect Free PostgreSQL Database</span>
+              </h3>
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                style={{ width: 'auto', padding: '4px 10px', fontSize: '0.8rem' }}
+                onClick={() => setShowDbModal(false)}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: '#cbd5e1', lineHeight: 1.5, marginTop: 0 }}>
+              Render's Free Tier uses ephemeral containers that clear local files whenever you rebuild or clear cache.
+              Connecting a <strong>100% Free PostgreSQL Database</strong> makes all player downloads, active user history, bot win rates, push subscriptions, and admin passwords <strong>persist permanently forever</strong>!
+            </p>
+
+            <div style={{ background: 'rgba(10, 11, 16, 0.7)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '16px', margin: '16px 0', fontSize: '0.84rem', color: '#e2e8f0', lineHeight: 1.6 }}>
+              <div style={{ fontWeight: 700, color: '#4ade80', marginBottom: '8px' }}>
+                ⚡ Quick 2-Minute Setup with Neon.tech (Recommended &amp; 100% Free Forever):
+              </div>
+              <ol style={{ margin: '0 0 0 18px', padding: 0 }}>
+                <li style={{ marginBottom: '8px' }}>
+                  Open <a href="https://neon.tech" target="_blank" rel="noreferrer" style={{ color: '#818cf8', fontWeight: 600 }}>neon.tech</a> and sign up for free (takes 30 seconds with Google/GitHub).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  Click <strong>"Create Project"</strong> (e.g. name it <code>bingo-db</code>).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  Copy your <strong>Connection String</strong> (e.g. <code>postgresql://alex:xxxx@ep-cool-frog-123.neon.tech/neondb?sslmode=require</code>).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  Go to your <a href="https://dashboard.render.com" target="_blank" rel="noreferrer" style={{ color: '#818cf8', fontWeight: 600 }}>Render Dashboard</a> &rarr; Click your <code>bingo-online-game</code> Web Service &rarr; <strong>Environment</strong> tab.
+                </li>
+                <li>
+                  Add an environment variable:<br />
+                  Key: <code style={{ color: '#facc15' }}>DATABASE_URL</code><br />
+                  Value: <em>paste your copied connection string</em>
+                </li>
+              </ol>
+            </div>
+
+            <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.25)', fontSize: '0.82rem', color: '#86efac', lineHeight: 1.45 }}>
+              ✅ That's it! As soon as you click "Save Changes" on Render, this Bingo server will automatically connect, create the database tables, and securely preserve all history and passwords permanently!
+            </div>
+
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                style={{ width: 'auto', padding: '10px 24px' }}
+                onClick={() => setShowDbModal(false)}
+              >
+                Got It!
+              </button>
+            </div>
           </div>
         </div>
       )}
