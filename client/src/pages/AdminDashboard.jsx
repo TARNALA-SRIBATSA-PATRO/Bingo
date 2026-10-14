@@ -1857,40 +1857,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Data-Driven Strategy & Subscriber Optimization Guide */}
-        <div className="admin-insights-box">
-          <div className="admin-insights-header">
-            <div className="admin-insights-title">
-              <span>📊 Data-Backed Send Time & Subscriber Growth Intelligence</span>
-            </div>
-            <span style={{ fontSize: '0.76rem', color: '#a5b4fc', background: 'rgba(99, 102, 241, 0.18)', padding: '2px 8px', borderRadius: '10px' }}>
-              Research & Casual Gaming Benchmarks
-            </span>
-          </div>
-
-          <div className="admin-insights-grid">
-            <div className="admin-insight-item">
-              <strong style={{ color: '#fde047' }}>🍵 Afternoon Tea Window (3:30 PM – 5:30 PM)</strong>
-              Top casual gaming engagement slot. Office workers take micro-breaks and crave brief relaxation. Best for warm, friendly messages like <em>"Tired from work? Take a quick 2-min Bingo break! ☕"</em>.
-            </div>
-
-            <div className="admin-insight-item">
-              <strong style={{ color: '#a78bfa' }}>🌙 Prime Evening Relaxation (7:30 PM – 9:30 PM)</strong>
-              Highest social multiplayer room creation and match duration. Users are relaxed at home and actively invite friends for casual social gaming sessions.
-            </div>
-
-            <div className="admin-insight-item">
-              <strong style={{ color: '#4ade80' }}>⚡ Cadence & Frequency Rule</strong>
-              Keep broadcast cadence to <strong>3–4 notifications per week</strong> maximum (&lt; 1 notification/day). Avoid sending before 9:00 AM or after 10:00 PM to prevent permission revokes.
-            </div>
-
-            <div className="admin-insight-item">
-              <strong style={{ color: '#38bdf8' }}>🎯 Boost Subscriber Opt-In & CTR</strong>
-              Pre-prompt soft ask primes players before native browser prompt (increases opt-ins from 18% to 64%). Use active curiosity hooks & emojis to boost CTR by +35%.
-            </div>
-          </div>
-        </div>
-
         {/* ========================================================================= */}
         {/* AI CONTEXTUAL CAMPAIGN STUDIO & AUTO-PILOT (100% FREE OF COST)           */}
         {/* ========================================================================= */}
