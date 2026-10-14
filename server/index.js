@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import compression from 'compression';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -45,7 +46,36 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.4.8';
+// Automatically load .env file if present in server/ or project root
+for (const envCandidate of [
+  path.resolve(__dirname, '.env'),
+  path.resolve(__dirname, '../.env'),
+  path.resolve(process.cwd(), '.env')
+]) {
+  try {
+    if (fs.existsSync(envCandidate)) {
+      const rawEnv = fs.readFileSync(envCandidate, 'utf8');
+      rawEnv.split(/\r?\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.substring(0, eqIdx).trim();
+            const val = trimmed.substring(eqIdx + 1).trim().replace(/^['"](.*)['"]$/, '$1');
+            if (process.env[key] === undefined) {
+              process.env[key] = val;
+            }
+          }
+        }
+      });
+      break;
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+const CURRENT_VERSION = '2.4.9';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()

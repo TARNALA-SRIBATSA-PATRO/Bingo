@@ -11,8 +11,13 @@ import {
   saveKeyToDatabase,
   saveMultipleKeysToDatabase
 } from './db.js';
-import { generateSmartNotificationCampaign, getContextualMatrix } from './aiNotificationEngine.js';
-export { generateSmartNotificationCampaign, getContextualMatrix };
+import {
+  generateSmartNotificationCampaign,
+  getContextualMatrix,
+  formatTimeIST,
+  formatDateIST
+} from './aiNotificationEngine.js';
+export { generateSmartNotificationCampaign, getContextualMatrix, formatTimeIST, formatDateIST };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -668,10 +673,10 @@ export async function schedulePushNotification({
   memoryStore.scheduledNotifications.push(item);
   memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
 
-  // Friendly date and time descriptors
+  // Friendly date and time descriptors strictly formatted in Indian Standard Time (IST)
   const triggerDate = new Date(time);
-  const timeDesc = triggerDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateDesc = triggerDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeDesc = formatTimeIST(triggerDate, true);
+  const dateDesc = formatDateIST(triggerDate);
 
   // Record an Advance Scheduling Notice
   const notice = {
@@ -694,7 +699,7 @@ export async function schedulePushNotification({
   if (broadcastAdvanceNotice) {
     try {
       const advanceTitle = `📅 Scheduled: ${item.title}`;
-      const advanceBody = `⚡ Upcoming match at ${timeDesc}! ${item.message.slice(0, 75)}`;
+      const advanceBody = `⚡ Set for ${timeDesc} (${dateDesc}): ${item.message.slice(0, 75)}`;
       await sendBroadcastPushNotification({
         title: advanceTitle,
         message: advanceBody,
@@ -721,7 +726,11 @@ export function getSchedulingNotices() {
 }
 
 export function getAiAutoPilotConfig() {
-  return memoryStore.aiAutoPilot || defaultState.aiAutoPilot;
+  const cfg = memoryStore.aiAutoPilot || defaultState.aiAutoPilot;
+  return {
+    ...cfg,
+    hasEnvKey: Boolean(process.env.GEMINI_API_KEY)
+  };
 }
 
 export function updateAiAutoPilotConfig({ enabled, geminiApiKey }) {
@@ -780,7 +789,7 @@ export async function processAiAutoPilotTick() {
       memoryStore.aiAutoPilot.lastScheduledDate = todayKey;
       memoryStore.aiAutoPilot.lastRunAt = Date.now();
       scheduleFlush('ai_auto_pilot');
-      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign: "${topPick.title}" for ${new Date(triggerTime).toLocaleTimeString()}`);
+      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign: "${topPick.title}" for ${formatTimeIST(triggerTime, true)}`);
     }
   } catch (err) {
     console.error('[AI Auto-Pilot] Error in auto-pilot tick:', err);
@@ -1117,7 +1126,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.4.8',
+    version: '2.4.9',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

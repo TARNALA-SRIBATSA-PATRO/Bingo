@@ -2623,20 +2623,24 @@ export default function AdminDashboard() {
                 </div>
                 By default, Bingo runs the <strong>Built-in Smart Semantic AI Engine</strong> directly on the server with 0ms latency, zero credit cards, and zero external costs.
                 <div style={{ marginTop: '6px' }}>
-                  You can optionally enter a <strong>Google Gemini API Key</strong> below to leverage Gemini 2.5 Flash. Google's free tier provides 15 free requests per minute with zero billing required!
+                  You can optionally enter a <strong>Google Gemini API Key</strong> below or add <code>GEMINI_API_KEY</code> to your environment variables (e.g. in <code>server/.env</code> or your Render dashboard). Google AI Studio provides 15 free requests/min with zero billing required!
                 </div>
               </div>
 
               {/* Gemini API Key input */}
               <div className="admin-form-group">
-                <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Gemini API Key (Optional)</span>
-                  <span style={{ fontSize: '0.74rem', color: '#a5b4fc' }}>Leave blank to use built-in free AI</span>
+                  <span style={{ fontSize: '0.74rem', color: aiAutoPilotConfig.hasEnvKey ? '#4ade80' : '#a5b4fc', fontWeight: aiAutoPilotConfig.hasEnvKey ? 600 : 400 }}>
+                    {aiAutoPilotConfig.hasEnvKey
+                      ? '⚡ Active via Environment Variable (GEMINI_API_KEY)'
+                      : 'Leave blank to use built-in free AI'}
+                  </span>
                 </label>
                 <input
                   type="password"
                   className="admin-input"
-                  placeholder="AIzaSy... (optional for Gemini 2.5 Flash free tier)"
+                  placeholder={aiAutoPilotConfig.hasEnvKey ? "Configured via GEMINI_API_KEY environment variable" : "AIzaSy... (optional for Gemini 2.5 Flash free tier)"}
                   value={customApiKeyInput}
                   onChange={(e) => setCustomApiKeyInput(e.target.value)}
                 />
