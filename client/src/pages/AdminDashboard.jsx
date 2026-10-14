@@ -93,6 +93,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
+  const [hoveredHour, setHoveredHour] = useState(null);
 
   // Time Filter State
   const [rangeMode, setRangeMode] = useState('7days'); // 'today', '7days', '30days', 'custom'
@@ -872,74 +873,283 @@ export default function AdminDashboard() {
       {/* Charts Grid */}
       <div className="admin-charts-grid">
         {/* Hourly Peak Time Chart */}
+        {/* Hourly Peak Time Chart - Continuous Spline Area Chart */}
         <div className="admin-chart-card">
           <div className="admin-chart-header">
             <div>
               <h3>Today's Hourly Peak Time</h3>
               <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
-                Traffic distribution by hour (00:00 to 23:00 UTC)
+                Continuous traffic distribution by hour (00:00 to 23:00 UTC)
               </p>
             </div>
-            {overview.peakHour && (
-              <div className="admin-peak-chip">
-                Peak Time: {overview.peakHour}
+            {hoveredHour !== null ? (
+              <div
+                className="admin-peak-chip"
+                style={{
+                  background: 'rgba(251, 191, 36, 0.2)',
+                  borderColor: '#fbbf24',
+                  color: '#fef08a'
+                }}
+              >
+                Hour {String(hoveredHour).padStart(2, '0')}:00 - {String((hoveredHour + 1) % 24).padStart(2, '0')}:00 UTC: {todayHourly[hoveredHour] || 0} visits {todayHourly[hoveredHour] > 0 && todayHourly[hoveredHour] === Math.max(...todayHourly, 0) ? '★ (Peak)' : ''}
               </div>
+            ) : (
+              overview.peakHour && (
+                <div className="admin-peak-chip">
+                  Peak Time: {overview.peakHour} ({overview.peakHourPings || 0} visits)
+                </div>
+              )
             )}
           </div>
 
-          <div style={{ width: '100%', height: '220px' }}>
-            <svg viewBox="0 0 700 200" width="100%" height="100%" style={{ overflow: 'visible' }}>
-              <defs>
-                <linearGradient id="hourGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" stopOpacity="0.6" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
+          <div style={{ width: '100%', height: '220px', position: 'relative' }}>
+            {(() => {
+              const rawHourly = stats?.todayHourlyActivity;
+              const hourly = Array.isArray(rawHourly) && rawHourly.length === 24
+                ? rawHourly
+                : (Array.isArray(rawHourly)
+                    ? [...rawHourly, ...new Array(Math.max(0, 24 - rawHourly.length)).fill(0)].slice(0, 24)
+                    : new Array(24).fill(0));
 
-              {/* Grid lines */}
-              <line x1="40" y1="30" x2="680" y2="30" stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
-              <line x1="40" y1="90" x2="680" y2="90" stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
-              <line x1="40" y1="150" x2="680" y2="150" stroke="rgba(255,255,255,0.06)" />
+              const maxVal = Math.max(...hourly, 1);
+              const baseY = 152;
+              const topY = 30;
+              const heightSpan = baseY - topY; // 122px
+              const startX = 42;
+              const endX = 688;
+              const stepX = (endX - startX) / 23; // ~28.087px
 
-              {/* Bars for 24 hours */}
-              {(() => {
-                const maxVal = Math.max(...todayHourly, 1);
-                const barWidth = 20;
-                return todayHourly.map((count, hr) => {
-                  const x = 50 + hr * 26;
-                  const barHeight = Math.round((count / maxVal) * 120);
-                  const y = 150 - barHeight;
-                  const isPeak = count === maxVal && maxVal > 0;
+              const points = hourly.map((count, hr) => ({
+                hr,
+                count,
+                x: startX + hr * stepX,
+                y: maxVal > 0 ? baseY - (count / maxVal) * heightSpan : baseY,
+                isPeak: count === maxVal && maxVal > 0
+              }));
 
-                  return (
-                    <g key={hr}>
-                      <rect
-                        x={x}
-                        y={y}
-                        width={barWidth}
-                        height={Math.max(barHeight, 2)}
-                        rx="3"
-                        fill={isPeak ? '#fbbf24' : '#6366f1'}
-                        opacity={isPeak ? 1 : 0.75}
-                      >
-                        <title>{`${hr}:00 - ${count} active visits`}</title>
-                      </rect>
-                      {hr % 3 === 0 && (
+              // Smooth spline using cubic Bezier curve interpolation
+              let linePath = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+              for (let i = 0; i < points.length - 1; i++) {
+                const p0 = points[i === 0 ? i : i - 1];
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+
+                const cp1x = p1.x + (p2.x - p0.x) / 6;
+                const cp1y = p1.y + (p2.y - p0.y) / 6;
+                const cp2x = p2.x - (p3.x - p1.x) / 6;
+                const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                linePath += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+              }
+
+              const areaPath = `${linePath} L ${points[23].x.toFixed(1)} ${baseY} L ${points[0].x.toFixed(1)} ${baseY} Z`;
+              const activePoint = hoveredHour !== null ? points[hoveredHour] : null;
+
+              return (
+                <svg viewBox="0 0 720 200" width="100%" height="100%" style={{ overflow: 'visible' }}>
+                  <defs>
+                    <linearGradient id="hourSmoothGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.45" />
+                      <stop offset="60%" stopColor="#6366f1" stopOpacity="0.12" />
+                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                    </linearGradient>
+                    <linearGradient id="hourStrokeGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#818cf8" />
+                      <stop offset="50%" stopColor="#a855f7" />
+                      <stop offset="100%" stopColor="#38bdf8" />
+                    </linearGradient>
+                    <filter id="peakGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+
+                  {/* Horizontal grid lines */}
+                  <line x1={startX - 10} y1={topY} x2={endX + 15} y2={topY} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <line x1={startX - 10} y1={Math.round((topY + baseY) / 2)} x2={endX + 15} y2={Math.round((topY + baseY) / 2)} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <line x1={startX - 10} y1={baseY} x2={endX + 15} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+
+                  {/* Left Y-axis labels */}
+                  <text x={startX - 14} y={topY + 3} fontSize="9" fill="#64748b" textAnchor="end">{maxVal}</text>
+                  <text x={startX - 14} y={Math.round((topY + baseY) / 2) + 3} fontSize="9" fill="#64748b" textAnchor="end">{Math.round(maxVal / 2)}</text>
+                  <text x={startX - 14} y={baseY + 3} fontSize="9" fill="#64748b" textAnchor="end">0</text>
+
+                  {/* Continuous smooth area fill */}
+                  <path d={areaPath} fill="url(#hourSmoothGrad)" />
+
+                  {/* Continuous smooth stroke line */}
+                  <path
+                    d={linePath}
+                    fill="none"
+                    stroke="url(#hourStrokeGrad)"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Hourly tick marks and labels for EVERY single hour (00h to 23h) */}
+                  {points.map((p) => {
+                    const isHovered = hoveredHour === p.hr;
+                    return (
+                      <g key={p.hr}>
+                        {/* Vertical axis tick mark */}
+                        <line
+                          x1={p.x}
+                          y1={baseY}
+                          x2={p.x}
+                          y2={baseY + 5}
+                          stroke={isHovered ? '#fbbf24' : p.count > 0 ? '#818cf8' : 'rgba(255,255,255,0.15)'}
+                          strokeWidth={isHovered ? 1.5 : 1}
+                        />
+
+                        {/* Each hour label (00, 01, 02 ... 23) */}
                         <text
-                          x={x + barWidth / 2}
-                          y="168"
-                          fontSize="10"
-                          fill="#94a3b8"
+                          x={p.x}
+                          y={baseY + 18}
+                          fontSize="8.5"
+                          fontFamily="monospace"
+                          fill={isHovered ? '#fbbf24' : p.count > 0 ? '#f8fafc' : '#64748b'}
+                          fontWeight={isHovered || p.count > 0 ? '700' : '500'}
+                          textAnchor="middle"
+                          style={{ transition: 'fill 0.15s ease' }}
+                        >
+                          {String(p.hr).padStart(2, '0')}
+                        </text>
+
+                        {/* Continuous curve points for every hour */}
+                        {p.isPeak ? (
+                          <g>
+                            <circle cx={p.x} cy={p.y} r="8.5" fill="none" stroke="#fbbf24" strokeWidth="1.2" opacity="0.6" />
+                            <circle cx={p.x} cy={p.y} r="5" fill="#fbbf24" stroke="#0f172a" strokeWidth="2" filter="url(#peakGlow)" />
+                          </g>
+                        ) : p.count > 0 ? (
+                          <circle cx={p.x} cy={p.y} r="4" fill="#818cf8" stroke="#0f172a" strokeWidth="1.8" />
+                        ) : (
+                          <circle cx={p.x} cy={p.y} r="2" fill="rgba(255,255,255,0.22)" />
+                        )}
+
+                        {/* Invisible interactive hover hit area for each hour */}
+                        <rect
+                          x={p.x - stepX / 2}
+                          y={topY - 10}
+                          width={stepX}
+                          height={baseY - topY + 35}
+                          fill="transparent"
+                          cursor="pointer"
+                          onMouseEnter={() => setHoveredHour(p.hr)}
+                          onMouseLeave={() => setHoveredHour(null)}
+                        >
+                          <title>{`${String(p.hr).padStart(2, '0')}:00 - ${String((p.hr + 1) % 24).padStart(2, '0')}:00 UTC: ${p.count} visits`}</title>
+                        </rect>
+                      </g>
+                    );
+                  })}
+
+                  {/* Active hovered crosshair line & callout */}
+                  {activePoint && (() => {
+                    const tipWidth = 148;
+                    const tipHeight = 44;
+                    let tipX = activePoint.x - tipWidth / 2;
+                    if (tipX < 40) tipX = 40;
+                    if (tipX + tipWidth > 700) tipX = 700 - tipWidth;
+                    const tipY = Math.max(12, activePoint.y - tipHeight - 12);
+
+                    return (
+                      <g style={{ pointerEvents: 'none' }}>
+                        {/* Vertical dashed crosshair line */}
+                        <line
+                          x1={activePoint.x}
+                          y1={topY}
+                          x2={activePoint.x}
+                          y2={baseY}
+                          stroke="#fbbf24"
+                          strokeWidth="1.5"
+                          strokeDasharray="3 3"
+                          opacity="0.85"
+                        />
+
+                        {/* Active glowing ring on curve */}
+                        <circle
+                          cx={activePoint.x}
+                          cy={activePoint.y}
+                          r="7"
+                          fill="#fbbf24"
+                          stroke="#ffffff"
+                          strokeWidth="2.5"
+                          filter="url(#peakGlow)"
+                        />
+
+                        {/* Floating tooltip callout box */}
+                        <rect
+                          x={tipX}
+                          y={tipY}
+                          width={tipWidth}
+                          height={tipHeight}
+                          rx="8"
+                          fill="rgba(15, 20, 32, 0.95)"
+                          stroke="#fbbf24"
+                          strokeWidth="1.2"
+                          filter="drop-shadow(0 6px 16px rgba(0,0,0,0.65))"
+                        />
+                        <text
+                          x={tipX + tipWidth / 2}
+                          y={tipY + 16}
+                          fontSize="9.5"
+                          fontWeight="700"
+                          fill="#cbd5e1"
                           textAnchor="middle"
                         >
-                          {String(hr).padStart(2, '0')}h
+                          {String(activePoint.hr).padStart(2, '0')}:00 - {String((activePoint.hr + 1) % 24).padStart(2, '0')}:00 UTC
                         </text>
-                      )}
-                    </g>
-                  );
-                });
-              })()}
-            </svg>
+                        <text
+                          x={tipX + tipWidth / 2}
+                          y={tipY + 33}
+                          fontSize="11"
+                          fontWeight="800"
+                          fill={activePoint.isPeak ? '#fbbf24' : '#818cf8'}
+                          textAnchor="middle"
+                        >
+                          {activePoint.count} Active Visits {activePoint.isPeak ? '★ (Peak)' : ''}
+                        </text>
+                      </g>
+                    );
+                  })()}
+                </svg>
+              );
+            })()}
+          </div>
+
+          {/* Quick Metrics Bar below continuous chart */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '8px 16px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+              fontSize: '0.8rem',
+              color: '#94a3b8'
+            }}
+          >
+            <div>
+              Total Today: <strong style={{ color: '#818cf8' }}>{(stats?.todayHourlyActivity || []).reduce((a, b) => a + b, 0)}</strong> visits
+            </div>
+            <div>
+              Peak Traffic: <strong style={{ color: '#fbbf24' }}>{overview.peakHour || '00:00 - 01:00'}</strong> ({overview.peakHourPings || 0} visits)
+            </div>
+            <div>
+              Active Hours: <strong style={{ color: '#38bdf8' }}>{(stats?.todayHourlyActivity || []).filter(v => v > 0).length}</strong> / 24 hrs
+            </div>
+            <div>
+              Current UTC: <strong style={{ color: '#cbd5e1' }}>{String(new Date().getUTCHours()).padStart(2, '0')}:00</strong>
+            </div>
           </div>
         </div>
 
