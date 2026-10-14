@@ -633,10 +633,16 @@ export function recordSentNotification({ id, title, message, url, deliveredCount
 export function getNotificationsHistory() {
   const history = memoryStore.notificationsHistory || [];
   // Exclude legacy reminder notices so the table strictly displays real delivered messages
-  return history.filter(item => {
+  const clean = history.filter(item => {
     if (!item || !item.title) return false;
     if (item.title.startsWith('📅 Scheduled:')) return false;
     return true;
+  });
+  // Strictly sort descending by sentAt so the latest is always on top (upper)
+  return clean.sort((a, b) => {
+    const timeA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+    const timeB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+    return timeB - timeA;
   });
 }
 
@@ -1153,7 +1159,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
 // Export complete store payload for Admin backup
 export function getBackupPayload() {
   return {
-    version: '2.5.5',
+    version: '2.5.6',
     timestamp: Date.now(),
     users: memoryStore.users,
     hourlyActivity: memoryStore.hourlyActivity,

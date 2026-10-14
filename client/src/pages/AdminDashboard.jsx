@@ -116,6 +116,41 @@ function formatDuration(seconds) {
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
 }
 
+// Collapsible message content helper (shows preview up to limit, then collapses with toggle)
+function CollapsibleMessage({ text, limit = 65 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  if (!text) return null;
+  if (text.length <= limit) {
+    return <span>{text}</span>;
+  }
+
+  return (
+    <div style={{ wordBreak: 'break-word', lineHeight: 1.45 }}>
+      <span>{isExpanded ? text : `${text.slice(0, limit)}... `}</span>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{
+          background: 'rgba(99, 102, 241, 0.18)',
+          border: '1px solid rgba(129, 140, 248, 0.35)',
+          color: '#a5b4fc',
+          cursor: 'pointer',
+          padding: '1px 6px',
+          borderRadius: '4px',
+          fontSize: '0.72rem',
+          fontWeight: 600,
+          display: 'inline-block',
+          marginLeft: '4px',
+          transition: 'all 0.15s ease'
+        }}
+        title={isExpanded ? 'Collapse content' : 'Expand full content'}
+      >
+        {isExpanded ? 'Collapse ▲' : 'More ▼'}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   // Mark session as admin so this device is never counted as an active player
   useEffect(() => {
@@ -172,7 +207,24 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const MAX_HISTORY_ROWS = 5;
   const [hoveredHour, setHoveredHour] = useState(null);
+
+  // Strictly sort history descending by sentAt (latest/newest in upper)
+  const sortedHistoryList = useMemo(() => {
+    return [...historyList].sort((a, b) => {
+      const timeA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+      const timeB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+      return timeB - timeA;
+    });
+  }, [historyList]);
+
+  // Collapsed vs expanded view of history rows
+  const visibleHistoryList = useMemo(() => {
+    if (historyExpanded) return sortedHistoryList;
+    return sortedHistoryList.slice(0, MAX_HISTORY_ROWS);
+  }, [sortedHistoryList, historyExpanded]);
 
   // Time Filter State
   const [rangeMode, setRangeMode] = useState('7days'); // 'today', '7days', '30days', 'custom'
@@ -449,7 +501,13 @@ export default function AdminDashboard() {
         } catch {}
       }
       if (historyData.success) {
-        setHistoryList(historyData.history || []);
+        const rawHistory = historyData.history || [];
+        const sorted = [...rawHistory].sort((a, b) => {
+          const timeA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+          const timeB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+          return timeB - timeA;
+        });
+        setHistoryList(sorted);
       }
       if (scheduledData && scheduledData.success) {
         setScheduledList(scheduledData.scheduled || []);
@@ -2221,7 +2279,9 @@ export default function AdminDashboard() {
                       {new Date(item.scheduledAt).toLocaleString()}
                     </td>
                     <td style={{ fontWeight: 600, color: '#fff' }}>{item.title}</td>
-                    <td style={{ maxWidth: '260px', whiteSpace: 'pre-wrap' }}>{item.message}</td>
+                    <td style={{ maxWidth: '260px', whiteSpace: 'pre-wrap' }}>
+                      <CollapsibleMessage text={item.message} limit={60} />
+                    </td>
                     <td><code>{item.url || '/'}</code></td>
                     <td>
                       <span className="admin-scheduled-badge">
@@ -2261,7 +2321,14 @@ export default function AdminDashboard() {
 
         {/* Notification History Log Table */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '28px 0 12px' }}>
-          <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9' }}>Dispatched Notification History</h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9' }}>
+              Dispatched Notification History ({sortedHistoryList.length})
+            </h4>
+            <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+              (Latest on top)
+            </span>
+          </div>
           <button
             type="button"
             onClick={fetchDashboardData}
@@ -2288,20 +2355,22 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {historyList.length === 0 ? (
+              {sortedHistoryList.length === 0 ? (
                 <tr>
                   <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>
                     No broadcast notifications dispatched yet.
                   </td>
                 </tr>
               ) : (
-                historyList.map((item) => (
+                visibleHistoryList.map((item) => (
                   <tr key={item.id}>
                     <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
                       {new Date(item.sentAt).toLocaleString()}
                     </td>
                     <td style={{ fontWeight: 600, color: '#fff' }}>{item.title}</td>
-                    <td style={{ maxWidth: '300px', whiteSpace: 'pre-wrap' }}>{item.message}</td>
+                    <td style={{ maxWidth: '300px', whiteSpace: 'pre-wrap' }}>
+                      <CollapsibleMessage text={item.message} limit={65} />
+                    </td>
                     <td><code>{item.url}</code></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className="admin-delivered-badge">
@@ -2339,6 +2408,36 @@ export default function AdminDashboard() {
             </tbody>
           </table>
         </div>
+
+        {sortedHistoryList.length > MAX_HISTORY_ROWS && (
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0 24px' }}>
+            <button
+              type="button"
+              className="admin-btn admin-btn-secondary"
+              onClick={() => setHistoryExpanded(!historyExpanded)}
+              style={{
+                width: 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 18px',
+                fontSize: '0.82rem',
+                borderRadius: '8px',
+                background: 'rgba(99, 102, 241, 0.12)',
+                border: '1px solid rgba(129, 140, 248, 0.3)',
+                color: '#e0e7ff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {historyExpanded ? (
+                <span>▲ Collapse History (Showing all {sortedHistoryList.length})</span>
+              ) : (
+                <span>▼ Show All History ({sortedHistoryList.length} total &bull; {sortedHistoryList.length - MAX_HISTORY_ROWS} more)</span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Change Password Modal */}
