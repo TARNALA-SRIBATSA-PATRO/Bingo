@@ -1,7 +1,7 @@
 {
   "name": "Bingo Online - Real-Time Multiplayer",
   "short_name": "Bingo",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "description": "Play classic 5x5 multiplayer Bingo online with friends in real-time. 100% free, zero ads, no login required.",
   "start_url": "/",
   "scope": "/",

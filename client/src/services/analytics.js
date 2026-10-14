@@ -2,6 +2,50 @@
 
 const SECRET_ID_KEY = '_b_device_id';
 const OFFLINE_QUEUE_KEY = '_b_offline_events';
+const LIFETIME_STATS_KEY = '_b_lifetime_bot_stats';
+
+// Retrieve or initialize the device's persistent lifetime bot statistics
+export function getLifetimeBotStats() {
+  try {
+    const raw = localStorage.getItem(LIFETIME_STATS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+
+  return {
+    totalMatches: 0,
+    beginner: { total: 0, userWins: 0, botWins: 0 },
+    intermediate: { total: 0, userWins: 0, botWins: 0 },
+    pro: { total: 0, userWins: 0, botWins: 0 }
+  };
+}
+
+// Record bot match in the client's permanent localStorage vault
+export function recordLocalBotMatch(difficulty, winner) {
+  const stats = getLifetimeBotStats();
+  const diffKey = ['beginner', 'intermediate', 'pro'].includes(difficulty) ? difficulty : 'pro';
+
+  if (!stats[diffKey]) {
+    stats[diffKey] = { total: 0, userWins: 0, botWins: 0 };
+  }
+
+  stats.totalMatches = (stats.totalMatches || 0) + 1;
+  stats[diffKey].total = (stats[diffKey].total || 0) + 1;
+
+  if (winner === 'user') {
+    stats[diffKey].userWins = (stats[diffKey].userWins || 0) + 1;
+  } else if (winner === 'bot') {
+    stats[diffKey].botWins = (stats[diffKey].botWins || 0) + 1;
+  }
+
+  try {
+    localStorage.setItem(LIFETIME_STATS_KEY, JSON.stringify(stats));
+  } catch {}
+
+  return stats;
+}
 
 // Convert base64 string to Uint8Array for VAPID key
 function urlBase64ToUint8Array(base64String) {
@@ -46,17 +90,18 @@ export function isInstalledPwa() {
   }
 }
 
-// Send active heartbeat
+// Send active heartbeat (carries persistent lifetime bot stats so server is auto-healed on redeploy)
 export async function sendHeartbeat() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   const userId = getOrCreateSecretUserId();
   const isPwa = isInstalledPwa();
+  const lifetimeBotStats = getLifetimeBotStats();
 
   try {
     await fetch('/api/analytics/heartbeat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, isPwa }),
+      body: JSON.stringify({ userId, isPwa, lifetimeBotStats }),
       keepalive: true
     });
   } catch {}
@@ -110,14 +155,17 @@ export async function syncOfflineQueue() {
   }
 }
 
-// Record Bot match completion (auto-queues locally if offline)
+// Record Bot match completion (persists in permanent localStorage vault and syncs to server)
 export async function trackBotGame({ difficulty, winner }) {
   const userId = getOrCreateSecretUserId();
+  const lifetimeStats = recordLocalBotMatch(difficulty, winner);
+
   const payload = {
     type: 'bot_game',
     userId,
     difficulty,
     winner,
+    lifetimeStats,
     timestamp: Date.now()
   };
 

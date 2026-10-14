@@ -90,6 +90,11 @@ export default function AdminDashboard() {
   const [isSendingPush, setIsSendingPush] = useState(false);
   const [pushFeedback, setPushFeedback] = useState(null);
 
+  // Snapshot Vault & Container Redeployment Detection
+  const [redeployAlert, setRedeployAlert] = useState(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef(null);
+
   // Password Modal
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPwd, setCurrentPwd] = useState('');
@@ -148,7 +153,49 @@ export default function AdminDashboard() {
       const historyData = await historyRes.json();
 
       if (statsData.success) {
-        setStats(statsData.stats);
+        const currentStats = statsData.stats;
+        setStats(currentStats);
+
+        // Check local vault snapshot to see if Render container was redeployed and wiped
+        try {
+          const rawVault = localStorage.getItem('_b_admin_stats_vault');
+          if (rawVault) {
+            const savedSnapshot = JSON.parse(rawVault);
+            const savedBotTotal = savedSnapshot?.stats?.botOverview?.totalMatches || savedSnapshot?.backupData?.botStats?.totalMatches || 0;
+            const currentBotTotal = currentStats?.botOverview?.totalMatches || 0;
+
+            if (currentBotTotal === 0 && savedBotTotal > 0) {
+              setRedeployAlert({
+                savedMatches: savedBotTotal,
+                savedUsers: savedSnapshot?.stats?.overview?.totalUsers || Object.keys(savedSnapshot?.backupData?.users || {}).length || 0,
+                timestamp: savedSnapshot?.timestamp || Date.now(),
+                snapshotData: savedSnapshot?.backupData || savedSnapshot?.stats
+              });
+            } else {
+              setRedeployAlert(null);
+            }
+          }
+
+          // If currentStats has data, update the local vault snapshot silently
+          if ((currentStats?.botOverview?.totalMatches || 0) > 0 || (currentStats?.overview?.totalUsers || 0) > 0) {
+            // Also fetch raw backup silently for exact store restoration
+            fetch('/api/admin/backup/export', { headers: { 'x-admin-token': authToken } })
+              .then(r => r.json())
+              .then(bData => {
+                localStorage.setItem('_b_admin_stats_vault', JSON.stringify({
+                  stats: currentStats,
+                  backupData: bData.backup || null,
+                  timestamp: Date.now()
+                }));
+              })
+              .catch(() => {
+                localStorage.setItem('_b_admin_stats_vault', JSON.stringify({
+                  stats: currentStats,
+                  timestamp: Date.now()
+                }));
+              });
+          }
+        } catch {}
       }
       if (historyData.success) {
         setHistoryList(historyData.history || []);
@@ -159,6 +206,87 @@ export default function AdminDashboard() {
       setIsLoading(false);
     }
   }, [token, queryParams]);
+
+  // Restore saved snapshot to server
+  async function handleRestoreSnapshot() {
+    if (!redeployAlert?.snapshotData) return;
+    setIsRestoring(true);
+    try {
+      const res = await fetch('/api/admin/backup/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({ backupData: redeployAlert.snapshotData })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.stats);
+        setRedeployAlert(null);
+        alert('All bot matches and metrics successfully restored to server!');
+        fetchDashboardData();
+      } else {
+        alert(data.error || 'Failed to restore snapshot');
+      }
+    } catch {
+      alert('Error connecting to server to restore snapshot');
+    } finally {
+      setIsRestoring(false);
+    }
+  }
+
+  // Export complete analytics backup file
+  async function handleExportBackup() {
+    try {
+      const res = await fetch('/api/admin/backup/export', {
+        headers: { 'x-admin-token': token }
+      });
+      const data = await res.json();
+      if (data.success && data.backup) {
+        const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `bingo-analytics-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      alert('Failed to export backup: ' + err.message);
+    }
+  }
+
+  // Import analytics backup file
+  async function handleImportBackup(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const backupData = JSON.parse(text);
+      const res = await fetch('/api/admin/backup/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({ backupData })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.stats);
+        setRedeployAlert(null);
+        alert('Backup successfully imported! All stats merged.');
+        fetchDashboardData();
+      } else {
+        alert(data.error || 'Failed to import backup');
+      }
+    } catch (err) {
+      alert('Invalid backup file format: ' + err.message);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   // Initial fetch and periodic auto-refresh every 20 seconds
   useEffect(() => {
@@ -348,6 +476,10 @@ export default function AdminDashboard() {
               >
                 {isLoggingIn ? 'Authenticating...' : 'Unlock Console'}
               </button>
+
+              <p style={{ marginTop: '14px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'center', lineHeight: 1.4 }}>
+                💡 <em>Notice:</em> If the server was recently redeployed and <code>ADMIN_PASSWORD</code> was not configured in Render, log in with default <code>BingoAdmin2026!</code>.
+              </p>
             </form>
           </div>
         </div>
@@ -372,6 +504,31 @@ export default function AdminDashboard() {
         </div>
 
         <div className="admin-header-actions">
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={handleExportBackup}
+            title="Download complete database backup JSON"
+            style={{ width: 'auto' }}
+          >
+            <span>📥 Export</span>
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={() => fileInputRef.current?.click()}
+            title="Restore database backup JSON"
+            style={{ width: 'auto' }}
+          >
+            <span>📤 Import</span>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={handleImportBackup}
+          />
           <button
             type="button"
             className="admin-btn admin-btn-secondary"
@@ -401,6 +558,42 @@ export default function AdminDashboard() {
           </button>
         </div>
       </header>
+
+      {/* Render Container Redeployment Recovery Banner */}
+      {redeployAlert && (
+        <div style={{
+          margin: '0 0 18px 0',
+          padding: '14px 18px',
+          borderRadius: '12px',
+          background: 'rgba(234, 179, 8, 0.12)',
+          border: '1px solid rgba(234, 179, 8, 0.45)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          flexWrap: 'wrap',
+          boxShadow: '0 8px 24px rgba(234, 179, 8, 0.15)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span style={{ fontSize: '1.6rem' }}>⚡</span>
+            <div>
+              <strong style={{ color: '#fde047', fontSize: '0.94rem' }}>Render Container Reset Detected</strong>
+              <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: '#fef08a', lineHeight: 1.4 }}>
+                The server container was rebuilt on update, but your browser vault holds a saved snapshot ({redeployAlert.savedMatches} bot matches, {redeployAlert.savedUsers} users from {new Date(redeployAlert.timestamp).toLocaleTimeString()}).
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="admin-btn admin-btn-primary"
+            onClick={handleRestoreSnapshot}
+            disabled={isRestoring}
+            style={{ width: 'auto', background: 'linear-gradient(135deg, #eab308, #ca8a04)', color: '#000', fontWeight: 'bold' }}
+          >
+            {isRestoring ? 'Restoring...' : 'Restore Snapshot to Server'}
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="admin-filter-bar">
@@ -934,6 +1127,11 @@ export default function AdminDashboard() {
                   onChange={(e) => setConfirmPwd(e.target.value)}
                   required
                 />
+              </div>
+
+              <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', fontSize: '0.8rem', color: '#93c5fd', lineHeight: 1.45 }}>
+                🛡️ <strong>Permanent Render Persistence:</strong><br />
+                Render Free Tier rebuilds containers on git updates. To make your password permanent across all future deployments, set <code>ADMIN_PASSWORD</code> in your <strong>Render Dashboard &rarr; Environment Variables</strong>.
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>

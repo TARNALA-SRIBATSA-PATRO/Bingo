@@ -126,6 +126,14 @@ export function setPassword(plainPassword) {
 }
 
 export function verifyPassword(plainPassword) {
+  if (!plainPassword || typeof plainPassword !== 'string') return false;
+
+  // 1. If ADMIN_PASSWORD is set in Render environment, it has highest authority and survives all rebuilds
+  if (process.env.ADMIN_PASSWORD && plainPassword === process.env.ADMIN_PASSWORD) {
+    return true;
+  }
+
+  // 2. Otherwise verify using salted scrypt hash
   const { passwordHash, passwordSalt } = memoryStore.adminSecurity;
   if (!passwordHash || !passwordSalt) return false;
   try {
@@ -147,8 +155,42 @@ function getTodayKey(date = new Date()) {
   return date.toISOString().split('T')[0];
 }
 
+// Re-aggregate global bot stats from all users' persistent lifetime profiles
+export function recomputeAggregatedBotStats() {
+  const aggregated = {
+    beginner: { total: 0, userWins: 0, botWins: 0 },
+    intermediate: { total: 0, userWins: 0, botWins: 0 },
+    pro: { total: 0, userWins: 0, botWins: 0 }
+  };
+
+  for (const user of Object.values(memoryStore.users || {})) {
+    if (user && user.botStats) {
+      for (const diff of ['beginner', 'intermediate', 'pro']) {
+        const d = user.botStats[diff];
+        if (d) {
+          aggregated[diff].total += (d.total || 0);
+          aggregated[diff].userWins += (d.userWins || 0);
+          aggregated[diff].botWins += (d.botWins || 0);
+        }
+      }
+    }
+  }
+
+  for (const diff of ['beginner', 'intermediate', 'pro']) {
+    if (!memoryStore.botStats[diff]) {
+      memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0 };
+    }
+    memoryStore.botStats[diff].total = Math.max(memoryStore.botStats[diff].total || 0, aggregated[diff].total);
+    memoryStore.botStats[diff].userWins = Math.max(memoryStore.botStats[diff].userWins || 0, aggregated[diff].userWins);
+    memoryStore.botStats[diff].botWins = Math.max(memoryStore.botStats[diff].botWins || 0, aggregated[diff].botWins);
+  }
+
+  const computedTotal = (memoryStore.botStats.beginner?.total || 0) + (memoryStore.botStats.intermediate?.total || 0) + (memoryStore.botStats.pro?.total || 0);
+  memoryStore.botStats.totalMatches = Math.max(memoryStore.botStats.totalMatches || 0, computedTotal);
+}
+
 // Record User Heartbeat / Visit
-export function recordHeartbeat({ userId, isPwa, userAgent }) {
+export function recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats }) {
   if (!userId) return;
   const now = Date.now();
   const todayKey = getTodayKey();
@@ -163,7 +205,8 @@ export function recordHeartbeat({ userId, isPwa, userAgent }) {
       isPwa: Boolean(isPwa),
       installedAt: isPwa ? now : null,
       userAgent: userAgent ? userAgent.substring(0, 150) : '',
-      visits: 1
+      visits: 1,
+      botStats: lifetimeBotStats || null
     };
     memoryStore.users[userId] = user;
   } else {
@@ -173,6 +216,13 @@ export function recordHeartbeat({ userId, isPwa, userAgent }) {
       user.isPwa = true;
       if (!user.installedAt) user.installedAt = now;
     }
+    if (lifetimeBotStats) {
+      user.botStats = lifetimeBotStats;
+    }
+  }
+
+  if (lifetimeBotStats) {
+    recomputeAggregatedBotStats();
   }
 
   // Update hourly activity
@@ -214,23 +264,40 @@ export function recordInstall({ userId }) {
 }
 
 // Record Bot Match
-export function recordBotGame({ userId, difficulty, winner }) {
+export function recordBotGame({ userId, difficulty, winner, lifetimeStats }) {
   const diffKey = ['beginner', 'intermediate', 'pro'].includes(difficulty) ? difficulty : 'pro';
-  memoryStore.botStats.totalMatches = (memoryStore.botStats.totalMatches || 0) + 1;
 
-  const diffStats = memoryStore.botStats[diffKey] || { total: 0, userWins: 0, botWins: 0 };
-  diffStats.total = (diffStats.total || 0) + 1;
+  if (lifetimeStats && userId) {
+    if (!memoryStore.users[userId]) {
+      memoryStore.users[userId] = {
+        id: userId,
+        firstSeen: Date.now(),
+        lastSeen: Date.now(),
+        isPwa: false,
+        visits: 1,
+        botStats: lifetimeStats
+      };
+    } else {
+      memoryStore.users[userId].botStats = lifetimeStats;
+      memoryStore.users[userId].lastSeen = Date.now();
+    }
+    recomputeAggregatedBotStats();
+  } else {
+    memoryStore.botStats.totalMatches = (memoryStore.botStats.totalMatches || 0) + 1;
+    const diffStats = memoryStore.botStats[diffKey] || { total: 0, userWins: 0, botWins: 0 };
+    diffStats.total = (diffStats.total || 0) + 1;
 
-  if (winner === 'user') {
-    diffStats.userWins = (diffStats.userWins || 0) + 1;
-  } else if (winner === 'bot') {
-    diffStats.botWins = (diffStats.botWins || 0) + 1;
-  }
+    if (winner === 'user') {
+      diffStats.userWins = (diffStats.userWins || 0) + 1;
+    } else if (winner === 'bot') {
+      diffStats.botWins = (diffStats.botWins || 0) + 1;
+    }
 
-  memoryStore.botStats[diffKey] = diffStats;
+    memoryStore.botStats[diffKey] = diffStats;
 
-  if (userId && memoryStore.users[userId]) {
-    memoryStore.users[userId].lastSeen = Date.now();
+    if (userId && memoryStore.users[userId]) {
+      memoryStore.users[userId].lastSeen = Date.now();
+    }
   }
 
   scheduleFlush();
@@ -491,6 +558,92 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
     totalSubscribers: subscriptions.length,
     historyRecord
   };
+}
+
+// Export complete store payload for Admin backup
+export function getBackupPayload() {
+  return {
+    version: '2.3.5',
+    timestamp: Date.now(),
+    users: memoryStore.users,
+    hourlyActivity: memoryStore.hourlyActivity,
+    dailyUniqueUsers: memoryStore.dailyUniqueUsers,
+    botStats: memoryStore.botStats,
+    multiplayerStats: memoryStore.multiplayerStats,
+    pushSubscriptions: memoryStore.pushSubscriptions,
+    notificationsHistory: memoryStore.notificationsHistory
+  };
+}
+
+// Restore & merge backup snapshot to memory store and disk
+export function restoreBackupData(backupData) {
+  if (!backupData || typeof backupData !== 'object') return false;
+
+  // 1. Merge users
+  if (backupData.users && typeof backupData.users === 'object') {
+    memoryStore.users = {
+      ...memoryStore.users,
+      ...backupData.users
+    };
+  }
+
+  // 2. Merge bot stats with maximums so no counts are ever reduced
+  if (backupData.botStats && typeof backupData.botStats === 'object') {
+    for (const diff of ['beginner', 'intermediate', 'pro']) {
+      const src = backupData.botStats[diff];
+      if (src) {
+        if (!memoryStore.botStats[diff]) {
+          memoryStore.botStats[diff] = { total: 0, userWins: 0, botWins: 0 };
+        }
+        memoryStore.botStats[diff].total = Math.max(memoryStore.botStats[diff].total || 0, src.total || 0);
+        memoryStore.botStats[diff].userWins = Math.max(memoryStore.botStats[diff].userWins || 0, src.userWins || 0);
+        memoryStore.botStats[diff].botWins = Math.max(memoryStore.botStats[diff].botWins || 0, src.botWins || 0);
+      }
+    }
+    const computedTotal = (memoryStore.botStats.beginner?.total || 0) + (memoryStore.botStats.intermediate?.total || 0) + (memoryStore.botStats.pro?.total || 0);
+    memoryStore.botStats.totalMatches = Math.max(
+      memoryStore.botStats.totalMatches || 0,
+      backupData.botStats.totalMatches || 0,
+      computedTotal
+    );
+  }
+
+  // 3. Merge push subscriptions
+  if (backupData.pushSubscriptions && typeof backupData.pushSubscriptions === 'object') {
+    memoryStore.pushSubscriptions = {
+      ...memoryStore.pushSubscriptions,
+      ...backupData.pushSubscriptions
+    };
+  }
+
+  // 4. Merge notifications history
+  if (Array.isArray(backupData.notificationsHistory)) {
+    const existingIds = new Set(memoryStore.notificationsHistory.map(n => n.id));
+    for (const notif of backupData.notificationsHistory) {
+      if (notif && notif.id && !existingIds.has(notif.id)) {
+        memoryStore.notificationsHistory.push(notif);
+        existingIds.add(notif.id);
+      }
+    }
+    memoryStore.notificationsHistory.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
+  }
+
+  // 5. Merge multiplayer stats
+  if (backupData.multiplayerStats) {
+    memoryStore.multiplayerStats.roomsCreated = Math.max(
+      memoryStore.multiplayerStats.roomsCreated || 0,
+      backupData.multiplayerStats.roomsCreated || 0
+    );
+    memoryStore.multiplayerStats.matchesCompleted = Math.max(
+      memoryStore.multiplayerStats.matchesCompleted || 0,
+      backupData.multiplayerStats.matchesCompleted || 0
+    );
+  }
+
+  // Re-aggregate and flush to disk
+  recomputeAggregatedBotStats();
+  flushToDisk();
+  return true;
 }
 
 // Initialize on module import

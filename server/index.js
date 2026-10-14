@@ -16,7 +16,9 @@ import {
   getVapidPublicKey,
   getAdminDashboardStats,
   sendBroadcastPushNotification,
-  getNotificationsHistory
+  getNotificationsHistory,
+  restoreBackupData,
+  getBackupPayload
 } from './analyticsStore.js';
 import {
   handleAdminLogin,
@@ -29,10 +31,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.5';
+const CURRENT_VERSION = '2.3.6';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791961000000
+  buildTime: 1791962000000
 });
 
 const app = express();
@@ -809,9 +811,9 @@ app.get(['/admin', '/dashboard', '/cpanel', '/login', '/wp-admin'], (req, res) =
 
 // Analytics Ingestion APIs (Lightweight, rate-protected)
 app.post('/api/analytics/heartbeat', (req, res) => {
-  const { userId, isPwa } = req.body || {};
+  const { userId, isPwa, lifetimeBotStats } = req.body || {};
   const userAgent = req.headers['user-agent'] || '';
-  recordHeartbeat({ userId, isPwa, userAgent });
+  recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats });
   res.json({ success: true });
 });
 
@@ -824,8 +826,8 @@ app.post('/api/analytics/event', (req, res) => {
 });
 
 app.post('/api/analytics/bot-game', (req, res) => {
-  const { userId, difficulty, winner } = req.body || {};
-  recordBotGame({ userId, difficulty, winner });
+  const { userId, difficulty, winner, lifetimeStats } = req.body || {};
+  recordBotGame({ userId, difficulty, winner, lifetimeStats });
   res.json({ success: true });
 });
 
@@ -869,6 +871,21 @@ app.post('/api/admin/push/send', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/push/history', requireAdminAuth, (req, res) => {
   res.json({ success: true, history: getNotificationsHistory() });
+});
+
+// Admin Analytics Vault Backup & Restore Endpoints
+app.get('/api/admin/backup/export', requireAdminAuth, (req, res) => {
+  res.setHeader('Content-Disposition', `attachment; filename="bingo-analytics-vault-${Date.now()}.json"`);
+  res.json({ success: true, backup: getBackupPayload() });
+});
+
+app.post('/api/admin/backup/restore', requireAdminAuth, (req, res) => {
+  const { backupData } = req.body || {};
+  if (!backupData) {
+    return res.status(400).json({ success: false, error: 'No backup payload provided' });
+  }
+  const restored = restoreBackupData(backupData);
+  res.json({ success: restored, stats: getAdminDashboardStats() });
 });
 
 // Return the obfuscated admin route path only to clients (so SPA router can mount it)
