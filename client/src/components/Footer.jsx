@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import LegalModal from './LegalModal';
 import './Footer.css';
 
 export default function Footer() {
+  const location = useLocation();
   const [showLegalModal, setShowLegalModal] = useState(false);
+
+  // Do not render site footer on executive admin console
+  if (location.pathname.startsWith('/sys-admin')) {
+    return null;
+  }
 
   const handleLegalClick = (e) => {
     // Prevent standard navigation if user is just clicking inside app,

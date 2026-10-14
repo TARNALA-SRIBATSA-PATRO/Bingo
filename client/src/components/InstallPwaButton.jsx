@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { registerPushNotifications } from '../services/analytics';
 import './InstallPwaButton.css';
 
 // Capture prompt early in case event fires before component mounts
@@ -49,6 +50,9 @@ const InstallPwaButton = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
       savedDeferredPrompt = null;
+      setTimeout(() => {
+        registerPushNotifications().catch(() => {});
+      }, 1500);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -76,6 +80,9 @@ const InstallPwaButton = () => {
       if (choiceResult.outcome === 'accepted') {
         setIsInstalled(true);
         window.dispatchEvent(new Event('appinstalled'));
+        setTimeout(() => {
+          registerPushNotifications().catch(() => {});
+        }, 1500);
       }
       setDeferredPrompt(null);
       savedDeferredPrompt = null;

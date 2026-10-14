@@ -11,6 +11,7 @@ import {
   getBotNextMove, 
   checkBingoLines 
 } from '../utils/botEngine';
+import { trackBotGame } from '../services/analytics';
 
 const GameContext = createContext(null);
 
@@ -580,6 +581,17 @@ export function GameProvider({ children }) {
 
       if (winners.length > 0) {
         // MATCH OVER!
+        const userWon = winners.some(w => w.id === effectivePlayerId);
+        const botWon = winners.some(w => w.id === 'bot-opponent');
+        let winnerResult = 'tie';
+        if (userWon && !botWon) winnerResult = 'user';
+        else if (botWon && !userWon) winnerResult = 'bot';
+
+        trackBotGame({
+          difficulty: roomData.difficulty || 'pro',
+          winner: winnerResult
+        });
+
         const gameHistoryEntry = {
           gameIndex: roomData.currentGameIndex,
           winners: winners.map(w => ({ name: w.name, id: w.id }))

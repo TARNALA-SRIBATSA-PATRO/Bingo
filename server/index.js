@@ -5,14 +5,34 @@ import cors from 'cors';
 import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  recordHeartbeat,
+  recordInstall,
+  recordBotGame,
+  syncOfflineEvents,
+  recordMultiplayerRoomCreated,
+  recordMultiplayerGameCompleted,
+  savePushSubscription,
+  getVapidPublicKey,
+  getAdminDashboardStats,
+  sendBroadcastPushNotification,
+  getNotificationsHistory
+} from './analyticsStore.js';
+import {
+  handleAdminLogin,
+  handleAdminLogout,
+  handleAdminChangePassword,
+  requireAdminAuth,
+  ADMIN_PATH
+} from './adminAuth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CURRENT_VERSION = '2.3.3';
+const CURRENT_VERSION = '2.3.4';
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
-  buildTime: 1791959000000
+  buildTime: 1791960000000
 });
 
 const app = express();
@@ -23,6 +43,9 @@ app.use(compression({
   threshold: 1024,
   level: 6
 }));
+
+// Parse JSON request bodies for analytics & admin APIs
+app.use(express.json({ limit: '256kb' }));
 
 // Fast in-memory endpoint for version checks (bypasses disk reads and file stat calls)
 app.get(['/version.json', '/api/version'], (req, res) => {
@@ -375,6 +398,7 @@ io.on('connection', (socket) => {
 
     cb({ success: true, roomId, playerId: socket.id });
     broadcastRoom(rooms[roomId]);
+    recordMultiplayerRoomCreated();
   });
 
   // Join room
@@ -532,6 +556,7 @@ io.on('connection', (socket) => {
         winners: winners.map(w => ({ name: w.name, id: w.id, wins: w.wins })),
         gameHistory: room.gameHistory
       });
+      recordMultiplayerGameCompleted();
       return cb({ success: true });
     }
 
@@ -775,6 +800,80 @@ io.on('connection', (socket) => {
 
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
+});
+
+// Decoy / Honeypot: Reject common probing paths
+app.get(['/admin', '/dashboard', '/cpanel', '/login', '/wp-admin'], (req, res) => {
+  res.status(404).send('Not found');
+});
+
+// Analytics Ingestion APIs (Lightweight, rate-protected)
+app.post('/api/analytics/heartbeat', (req, res) => {
+  const { userId, isPwa } = req.body || {};
+  const userAgent = req.headers['user-agent'] || '';
+  recordHeartbeat({ userId, isPwa, userAgent });
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/event', (req, res) => {
+  const { userId, event } = req.body || {};
+  if (event === 'installed') {
+    recordInstall({ userId });
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/bot-game', (req, res) => {
+  const { userId, difficulty, winner } = req.body || {};
+  recordBotGame({ userId, difficulty, winner });
+  res.json({ success: true });
+});
+
+app.post('/api/analytics/sync-offline', (req, res) => {
+  const { events } = req.body || {};
+  const syncedCount = syncOfflineEvents(events);
+  res.json({ success: true, syncedCount });
+});
+
+// Web Push APIs
+app.get('/api/push/vapid-public-key', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({ publicKey: getVapidPublicKey() });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  const { userId, subscription } = req.body || {};
+  const saved = savePushSubscription({ userId, subscription });
+  res.json({ success: saved });
+});
+
+// Admin Authentication Endpoints
+app.post('/api/admin/login', handleAdminLogin);
+app.post('/api/admin/logout', handleAdminLogout);
+app.post('/api/admin/change-password', requireAdminAuth, handleAdminChangePassword);
+
+// Admin Data & Management Endpoints (Strictly Protected)
+app.get('/api/admin/stats', requireAdminAuth, (req, res) => {
+  const stats = getAdminDashboardStats(req.query);
+  res.json({ success: true, stats });
+});
+
+app.post('/api/admin/push/send', requireAdminAuth, async (req, res) => {
+  const { title, message, url } = req.body || {};
+  if (!title || !message) {
+    return res.status(400).json({ success: false, error: 'Notification title and message are required' });
+  }
+  const result = await sendBroadcastPushNotification({ title, message, url });
+  res.json(result);
+});
+
+app.get('/api/admin/push/history', requireAdminAuth, (req, res) => {
+  res.json({ success: true, history: getNotificationsHistory() });
+});
+
+// Return the obfuscated admin route path only to clients (so SPA router can mount it)
+app.get('/api/admin/config-path', (req, res) => {
+  res.json({ adminPath: ADMIN_PATH });
 });
 
 app.get('*', (req, res) => {

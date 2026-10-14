@@ -1,0 +1,37 @@
+{
+  "users": {},
+  "hourlyActivity": {},
+  "dailyUniqueUsers": {},
+  "botStats": {
+    "totalMatches": 0,
+    "beginner": {
+      "total": 0,
+      "userWins": 0,
+      "botWins": 0
+    },
+    "intermediate": {
+      "total": 0,
+      "userWins": 0,
+      "botWins": 0
+    },
+    "pro": {
+      "total": 0,
+      "userWins": 0,
+      "botWins": 0
+    }
+  },
+  "multiplayerStats": {
+    "roomsCreated": 0,
+    "matchesCompleted": 0
+  },
+  "pushSubscriptions": {},
+  "notificationsHistory": [],
+  "adminSecurity": {
+    "passwordHash": "3d0800cd480674bf618736f8a5dbfa8306716b88063be6d1d1f8b180094a487464b4f1984d8a09962345c895621a38bca2f7671d47362df7862e0ef591ceae11",
+    "passwordSalt": "2cba516423be70efcd785b0b1d547306",
+    "vapidKeys": {
+      "publicKey": "BGgagZgaa9TQsAc6PXmr8Inp4JUPTL7BA3gwVGIS11CWV2QFA6RZeYXioissAh4KNTwdV-cMKf9sWKPBlvup9aQ",
+      "privateKey": "SKXmAofWAwqk7yU4D7y2BIeO-E0x5NIZqauXGnEQRr0"
+    }
+  }
+}

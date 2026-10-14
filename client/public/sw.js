@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bingo-pwa-v2.3.3';
+const CACHE_NAME = 'bingo-pwa-v2.3.4';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -126,6 +126,47 @@ self.addEventListener('fetch', (event) => {
         .catch(() => cachedResponse);
 
       return cachedResponse || fetchPromise;
+    })
+  );
+});
+
+// 5. Web Push Notification Reception
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: 'Bingo Online', body: event.data ? event.data.text() : 'New update in Bingo!' };
+  }
+
+  const title = data.title || 'Bingo Online';
+  const options = {
+    body: data.body || 'Open Bingo to play now!',
+    icon: data.icon || '/icons/icon-192.png',
+    badge: '/favicon.svg',
+    data: { url: data.url || '/' },
+    vibrate: [200, 100, 200],
+    tag: `bingo-push-${Date.now()}`
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// 6. Handle notification click
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
     })
   );
 });

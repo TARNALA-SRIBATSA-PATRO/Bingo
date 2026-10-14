@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SocketProvider } from './context/SocketContext';
 import { GameProvider } from './context/GameContext';
 import { AudioProvider } from './context/AudioContext';
@@ -14,9 +15,16 @@ import Lobby from './pages/Lobby';
 import BoardSetup from './pages/BoardSetup';
 import GamePage from './pages/GamePage';
 import LegalPage from './pages/LegalPage';
+import AdminDashboard from './pages/AdminDashboard';
+import { initAnalytics } from './services/analytics';
 import './App.css';
 
 function App() {
+  useEffect(() => {
+    const cleanup = initAnalytics();
+    return cleanup;
+  }, []);
+
   return (
     <BrowserRouter>
       <AudioProvider>
@@ -35,6 +43,14 @@ function App() {
                 <Route path="/board-setup" element={<BoardSetup />} />
                 <Route path="/game" element={<GamePage />} />
                 <Route path="/legal" element={<LegalPage />} />
+                
+                {/* Obfuscated secure administration portal */}
+                <Route path="/sys-admin-panel-92f7" element={<AdminDashboard />} />
+
+                {/* Honeypots & Decoys: redirect predictable paths to home */}
+                <Route path="/admin" element={<Navigate to="/" replace />} />
+                <Route path="/dashboard" element={<Navigate to="/" replace />} />
+                <Route path="/cpanel" element={<Navigate to="/" replace />} />
               </Routes>
               <Footer />
             </div>

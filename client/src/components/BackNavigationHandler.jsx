@@ -30,6 +30,12 @@ export default function BackNavigationHandler() {
 
       const pathname = window.location.pathname;
 
+      // Admin portal: return to home
+      if (pathname.startsWith('/sys-admin')) {
+        navigate('/');
+        return;
+      }
+
       // 2. In Match or Board Setup (/game, /board-setup)
       if (pathname === '/game' || pathname === '/board-setup') {
         setShowLeaveModal(true);
