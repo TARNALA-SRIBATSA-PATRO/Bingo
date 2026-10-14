@@ -495,12 +495,26 @@ export function GameProvider({ children }) {
   // -------------------------------------------------------------
   // CALL NUMBER (User or Bot)
   // -------------------------------------------------------------
-  const callNumber = useCallback((number, cb) => {
+  const callNumber = useCallback((number, cb, isBotCall = false) => {
     if (roomData?.isBot) {
       if (roomData.status !== 'playing') {
         if (cb) cb({ success: false, error: 'Game not in progress' });
         return;
       }
+
+      const currentTurnPlayerId = roomData.turnOrder?.[roomData.currentTurnIndex];
+      const effectivePlayerId = playerId || 'player-user';
+
+      // Turn Validation Guard: Only allow moves during the caller's legitimate turn
+      if (!isBotCall && currentTurnPlayerId !== effectivePlayerId) {
+        if (cb) cb({ success: false, error: "Not your turn! Wait for BingoBot's move." });
+        return;
+      }
+      if (isBotCall && currentTurnPlayerId !== 'bot-opponent') {
+        if (cb) cb({ success: false, error: 'Bot move ignored (not bot turn)' });
+        return;
+      }
+
       const num = parseInt(number, 10);
       if (roomData.calledNumbers.includes(num)) {
         if (cb) cb({ success: false, error: 'Number already called' });
@@ -511,11 +525,10 @@ export function GameProvider({ children }) {
         return;
       }
 
-      const currentTurnPlayerId = roomData.turnOrder[roomData.currentTurnIndex];
       const updatedCalled = [...roomData.calledNumbers, num];
       const updatedHistory = [...roomData.calledHistory, { number: num, calledById: currentTurnPlayerId }];
 
-      const userPlayer = roomData.players.find(p => p.id === (playerId || 'player-user'));
+      const userPlayer = roomData.players.find(p => p.id === effectivePlayerId);
       const botPlayer = roomData.players.find(p => p.id === 'bot-opponent');
       const botBoard = botSecretBoardRef.current || botPlayer.secretBoard;
 
@@ -652,7 +665,7 @@ export function GameProvider({ children }) {
       });
 
       if (botMove !== null && botMove !== undefined) {
-        callNumber(botMove);
+        callNumber(botMove, null, true);
       }
     }, thinkingDelay);
 
@@ -856,9 +869,15 @@ export function GameProvider({ children }) {
     };
   }, [socket, roomData, inactivityWarning, leaveRoom, showNotif]);
 
-  const myPlayer = roomData?.players?.find(p => p.id === playerId) || null;
-  const isCreator = roomData?.isBot ? true : roomData?.creatorId === playerId;
-  const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === playerId;
+  const effectivePlayerId = roomData?.isBot ? (playerId || 'player-user') : playerId;
+  const myPlayer = roomData?.players?.find(p => p.id === effectivePlayerId) || null;
+  const isCreator = roomData?.isBot ? true : roomData?.creatorId === effectivePlayerId;
+  const isMyTurn = Boolean(
+    roomData?.status === 'playing' &&
+    roomData?.turnOrder &&
+    roomData?.turnOrder[roomData?.currentTurnIndex] &&
+    roomData?.turnOrder[roomData?.currentTurnIndex] === effectivePlayerId
+  );
 
   return (
     <GameContext.Provider value={{

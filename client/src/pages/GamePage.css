@@ -297,6 +297,21 @@
   z-index: 1;
 }
 
+/* Disabled cell (not your turn or already called/marked) */
+.game-cell.cell-disabled {
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+/* Subtle board state when waiting for opponent/bot */
+.game-board-grid.board-waiting-turn {
+  transition: opacity 0.25s ease;
+}
+.game-board-grid.board-waiting-turn .game-cell:not(.marked) {
+  filter: brightness(0.92);
+}
+
 /* Selected cell */
 .game-cell.selected {
   border-color: #fbbf24 !important;

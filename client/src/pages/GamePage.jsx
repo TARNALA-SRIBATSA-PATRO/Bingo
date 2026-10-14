@@ -181,30 +181,38 @@ export default function GamePage() {
  for (const { r, c } of getLineCells(line)) lineCellSet.add(`${r}-${c}`);
  }
 
- /*  Event handlers  */
- function handleCellClick(val) {
- if (!isMyTurn || roomData.status !== 'playing') return;
- if (calledNumbers.includes(val) || myMarked.has(val)) return;
- setCallError('');
- setSelectedNumber(prev => (prev === val ? null : val));
- }
+  /*  Event handlers  */
+  function handleCellClick(val) {
+    if (!isMyTurn || roomData?.status !== 'playing') {
+      setSelectedNumber(null);
+      return;
+    }
+    if (calledNumbers.includes(val) || myMarked.has(val)) return;
+    setCallError('');
+    setSelectedNumber(prev => (prev === val ? null : val));
+  }
 
- function handleCallConfirm() {
- if (!selectedNumber) return;
- if (calledNumbers.includes(selectedNumber) || myMarked.has(selectedNumber)) {
- setCallError('Already called!');
- setSelectedNumber(null);
- return;
- }
- setCallError('');
- callNumber(selectedNumber, res => {
- if (!res.success) {
- setCallError(res.error || 'Failed to call number');
- } else {
- setSelectedNumber(null);
- }
- });
- }
+  function handleCallConfirm() {
+    if (!isMyTurn || roomData?.status !== 'playing') {
+      setSelectedNumber(null);
+      setCallError('Not your turn!');
+      return;
+    }
+    if (!selectedNumber) return;
+    if (calledNumbers.includes(selectedNumber) || myMarked.has(selectedNumber)) {
+      setCallError('Already called!');
+      setSelectedNumber(null);
+      return;
+    }
+    setCallError('');
+    callNumber(selectedNumber, res => {
+      if (!res.success) {
+        setCallError(res.error || 'Failed to call number');
+      } else {
+        setSelectedNumber(null);
+      }
+    });
+  }
 
  function handleReplay() {
  replayGame(res => { if (!res.success) showNotif(res.error, 'error'); });
@@ -329,13 +337,13 @@ export default function GamePage() {
 
  {/* Board grid + SVG line overlay */}
  <div className="board-grid-wrapper">
- <div className="game-board-grid" ref={boardRef}>
+ <div className={`game-board-grid ${!isMyTurn ? 'board-waiting-turn' : ''}`} ref={boardRef}>
  {myBoard.map((row, r) =>
  row.map((val, c) => {
  const isMarked = myMarked.has(val);
  const isAlreadyCalled = calledNumbers.includes(val);
- const isSelected = selectedNumber === val && !isMarked && !isAlreadyCalled;
- const isClickable = isMyTurn && !isAlreadyCalled && !isMarked && roomData.status === 'playing';
+ const isClickable = Boolean(isMyTurn && !isAlreadyCalled && !isMarked && roomData?.status === 'playing');
+ const isSelected = Boolean(isMyTurn && selectedNumber === val && !isMarked && !isAlreadyCalled);
 
  // Color of the player who called this number
  const callerColor = isMarked ? playerColorMap[callerByNumber[val]] : null;
@@ -353,14 +361,15 @@ export default function GamePage() {
  'game-cell',
  isMarked ? 'marked' : '',
  isSelected ? 'selected' : '',
- isClickable ? 'clickable' : '',
- ].join(' ')}
+ isClickable ? 'clickable' : 'cell-disabled',
+ ].filter(Boolean).join(' ')}
  style={style}
- onClick={(e) => {
+ onClick={isClickable ? (e) => {
  e.stopPropagation();
  handleCellClick(val);
- }}
- title={isClickable ? `Click to select ${val}` : ''}
+ } : undefined}
+ title={isClickable ? `Click to select ${val}` : !isMyTurn ? 'Wait for your turn' : ''}
+ aria-disabled={!isClickable}
  >
  {val}
  </div>

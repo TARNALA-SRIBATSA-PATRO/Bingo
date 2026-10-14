@@ -683,7 +683,7 @@ app.get('/api/version', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.json({
-    version: '2.3.1',
+    version: '2.3.2',
     buildTime: Date.now()
   });
 });
