@@ -2,52 +2,52 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="canonical" href="https://bingo-online-game.onrender.com/" />
     <meta name="google-site-verification" content="VVpy8zUZ_eiiqAAAj03G1Yir4iTsAucN4V_LVzmUhmA" />
 
-    <!-- Primary SEO Meta Tags -->
-    <title>Play Bingo Online Free - Real-Time Multiplayer Game (No Login, No Ads)</title>
-    <meta name="title" content="Play Bingo Online Free - Real-Time Multiplayer Game (No Login, No Ads)" />
-    <meta name="description" content="Play classic 5x5 multiplayer Bingo online with friends in real-time. 100% free of cost, zero advertisements, fast & secure, no login or download required. Instant private rooms, share links, track round winners, and enjoy default-muted music." />
-    <meta name="keywords" content="bingo online, free multiplayer bingo, play bingo with friends, online bingo no ads, bingo game no login, 5x5 bingo online, free web bingo, real time bingo game, private room bingo, bingo game with friends, instant bingo" />
+    <title>Bingo with friends - free online multiplayer bingo</title>
+    <meta name="description" content="Play 5x5 bingo with up to four friends in the browser. Make a room, share the code, take turns calling numbers. Free, no ads, no account." />
     <meta name="author" content="Tarnala Sribatsa Patro" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="theme-color" content="#5e6ad2" />
+    <meta name="theme-color" content="#0e1612" />
     <link rel="manifest" href="/manifest.json" />
+    <script>
+      // The admin page installs as its own app, so point the manifest at it when loaded there.
+      if (location.pathname.indexOf("/sys-admin-panel-92f7") === 0) {
+        document.querySelector("link[rel=manifest]").setAttribute("href", "/admin-manifest.json");
+      }
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Bingo" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
-    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://bingo-online-game.onrender.com/" />
-    <meta property="og:title" content="Play Bingo Online Free - Real-Time Multiplayer Game" />
-    <meta property="og:description" content="100% Free, zero ads, no login required. Create private rooms, invite friends with one click, and play real-time 5x5 Bingo online." />
-    <meta property="og:site_name" content="Bingo Online Multiplayer" />
+    <meta property="og:title" content="Bingo with friends" />
+    <meta property="og:description" content="5x5 bingo for up to four players in the browser. Free, no ads, no account." />
+    <meta property="og:site_name" content="Bingo" />
     <meta property="og:locale" content="en_US" />
 
-    <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:url" content="https://bingo-online-game.onrender.com/" />
-    <meta name="twitter:title" content="Play Bingo Online Free - Real-Time Multiplayer Game" />
-    <meta name="twitter:description" content="Play real-time multiplayer 5x5 Bingo with friends. Free, no ads, no downloads, no signup needed." />
+    <meta name="twitter:title" content="Bingo with friends" />
+    <meta name="twitter:description" content="5x5 bingo for up to four players in the browser. Free, no ads, no account." />
 
-    <!-- Preload Audio Assets -->
     <link rel="preload" href="/sounds/bgm-lobby%20and%20home.mp3" as="fetch" crossorigin="anonymous" />
     <link rel="preload" href="/sounds/bgm-game.mp3" as="fetch" crossorigin="anonymous" />
 
-    <!-- JSON-LD Structured Data: WebApplication / VideoGame -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
-      "name": "Bingo Online Multiplayer",
+      "name": "Bingo",
       "url": "https://bingo-online-game.onrender.com/",
-      "description": "Play classic 5x5 multiplayer Bingo online with friends in real-time. 100% free of cost, zero ads, no registration needed.",
+      "description": "Play 5x5 bingo with up to four friends in the browser. Make a room, share the code, take turns calling numbers. Free, no ads, no account.",
       "applicationCategory": "GameApplication",
       "operatingSystem": "All modern web browsers",
       "inLanguage": "en",
@@ -57,20 +57,14 @@
         "priceCurrency": "USD"
       },
       "featureList": [
-        "100% Free of cost forever",
-        "No advertisements (Ad-Free)",
-        "No login or registration required",
-        "No download needed - play in browser",
-        "Real-time multiplayer WebSockets",
-        "Private rooms with 6-digit codes and instant share links",
-        "Track round-by-round winners and victory leaderboard",
-        "Default muted audio with easy toggle",
-        "Fast, lightweight, and secure"
+        "Private rooms for up to four players",
+        "Play against a bot offline",
+        "Round history and win counts per room",
+        "Installable as a web app"
       ]
     }
     </script>
 
-    <!-- JSON-LD Structured Data: FAQPage for Google Rich Snippets -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -78,26 +72,18 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "Is this online Bingo game free to play?",
+          "name": "Does it cost anything?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes, it is 100% free of cost with no hidden fees, premium tiers, or purchases."
+            "text": "No. There are no purchases, subscriptions or ads."
           }
         },
         {
           "@type": "Question",
-          "name": "Do I need to sign up or log in to play Bingo?",
+          "name": "Do I need an account?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No registration or login is required. You can choose a nickname and immediately create or join a room."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Are there advertisements in this Bingo game?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "No. The game is completely ad-free for a fast, clean, and uninterrupted gaming experience."
+            "text": "No. Type a name, make a room and share the code."
           }
         },
         {
@@ -105,15 +91,23 @@
           "name": "How do I play with friends?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Create a room to receive a unique 6-digit room code or shareable invite link. Send the link to friends so they can join instantly from their phones, tablets, or computers."
+            "text": "One person creates a room and gets a 6-character code and a link. Everyone else enters the code or opens the link. Up to 4 people can be in a room."
           }
         },
         {
           "@type": "Question",
-          "name": "Does the game track previous winners across rounds?",
+          "name": "Can I play on my own?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. The game maintains a round-by-round game history log and an all-time victory leaderboard during your session."
+            "text": "Yes. Pick the bot in the lobby. It works offline once the page has loaded."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it keep score?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Each room keeps a list of who won each round and a running win count while the room is open."
           }
         }
       ]

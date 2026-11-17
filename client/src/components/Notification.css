@@ -1,82 +1,35 @@
 .notification {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  top: calc(16px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
-  border-radius: 999px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
   font-size: 0.9rem;
-  font-weight: 600;
-  max-width: 360px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  animation: notif-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: var(--shadow-float);
+  animation: notif-in var(--t) var(--ease);
+}
+.notification svg { flex-shrink: 0; }
+
+@keyframes notif-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
-@keyframes notif-slide-in {
-  from {
-    transform: translateY(-16px) scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.notif-icon-bubble {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.notif-success {
-  background: rgba(16, 36, 28, 0.92);
-  border: 1px solid rgba(74, 222, 128, 0.35);
-  color: #86efac;
-}
-
-.notif-success .notif-icon-bubble {
-  background: rgba(74, 222, 128, 0.2);
-  color: #4ade80;
-}
-
-.notif-error {
-  background: rgba(40, 16, 20, 0.92);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  color: #fca5a5;
-}
-
-.notif-error .notif-icon-bubble {
-  background: rgba(248, 113, 113, 0.2);
-  color: #f87171;
-}
-
-.notif-info {
-  background: rgba(18, 24, 44, 0.92);
-  border: 1px solid rgba(94, 106, 210, 0.35);
-  color: #c7d2fe;
-}
-
-.notif-info .notif-icon-bubble {
-  background: rgba(94, 106, 210, 0.2);
-  color: #818cf8;
-}
-
-@media (max-width: 480px) {
-  .notification {
-    top: 16px;
-    right: 16px;
-    left: 16px;
-    max-width: none;
-    justify-content: center;
-  }
-}
+.notif-success { border-color: rgba(95, 197, 133, 0.5); }
+.notif-success svg { color: var(--ok); }
+.notif-error { border-color: rgba(227, 104, 79, 0.5); }
+.notif-error svg { color: var(--bad); }
+.notif-warning { border-color: rgba(240, 182, 58, 0.5); }
+.notif-warning svg { color: var(--brass); }
+.notif-info svg { color: var(--info); }

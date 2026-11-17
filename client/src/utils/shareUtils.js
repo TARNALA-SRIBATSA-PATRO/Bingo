@@ -50,13 +50,13 @@ export function copyToClipboard(text) {
 export async function triggerShare({ roomId, showNotif, onFallbackModal }) {
   if (!roomId) return;
   const shareUrl = `${window.location.origin}/lobby?room=${roomId}`;
-  const shareText = `Join my BINGO room! Room Code: ${roomId}`;
+  const shareText = `Join my bingo room. Room code: ${roomId}`;
 
   // 1. Try native Web Share API (only works in HTTPS or localhost)
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       const shareData = {
-        title: 'Join my BINGO Game!',
+        title: 'Join my bingo room',
         text: shareText,
         url: shareUrl,
       };
@@ -81,11 +81,11 @@ export async function triggerShare({ roomId, showNotif, onFallbackModal }) {
   try {
     await copyToClipboard(shareUrl);
     if (showNotif) {
-      showNotif(`Game link (${roomId}) copied!`, 'success');
+      showNotif(`Room link copied. Room code: ${roomId}`, 'success');
     }
   } catch {
     if (showNotif) {
-      showNotif(`Room Code: ${roomId}`, 'info');
+      showNotif(`Room code: ${roomId}`, 'info');
     }
   }
 

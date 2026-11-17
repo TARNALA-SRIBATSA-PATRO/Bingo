@@ -1,14 +1,14 @@
 {
-  "name": "Bingo Online - Real-Time Multiplayer",
+  "name": "Bingo",
   "short_name": "Bingo",
-  "version": "2.5.7",
-  "description": "Play classic 5x5 multiplayer Bingo online with friends in real-time. 100% free, zero ads, no login required.",
+  "version": "2.6.0",
+  "description": "Play 5x5 bingo with up to four friends in the browser. Make a room, share the code, take turns calling numbers. Free, no ads, no account.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0a0b10",
-  "theme_color": "#5e6ad2",
+  "background_color": "#0e1612",
+  "theme_color": "#0e1612",
   "categories": ["games", "entertainment"],
   "icons": [
     {

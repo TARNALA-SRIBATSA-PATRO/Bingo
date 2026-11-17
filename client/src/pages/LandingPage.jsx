@@ -1,155 +1,97 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SoundToggle from '../components/SoundToggle';
-import {
-  PlayIcon,
-  BookIcon,
-  UsersIcon,
-  SparklesIcon,
-  TrophyIcon,
-  ShieldIcon,
-  ZapIcon,
-  VolumeMuteIcon
-} from '../components/Icons';
+import { PlayIcon, BookIcon } from '../components/Icons';
 import './LandingPage.css';
+
+const FAQ = [
+  {
+    q: 'Does it cost anything?',
+    a: 'No. There are no purchases, subscriptions or ads.'
+  },
+  {
+    q: 'Do I need an account?',
+    a: 'No. Type a name, make a room and share the code.'
+  },
+  {
+    q: 'How do I play with friends?',
+    a: 'One person creates a room and gets a 6-character code and a link. Everyone else enters the code or opens the link. Up to 4 people can be in a room.'
+  },
+  {
+    q: 'Can I play on my own?',
+    a: 'Yes. Pick "Play against the bot" in the lobby. It works offline once the page has loaded.'
+  },
+  {
+    q: 'Does it keep score?',
+    a: 'Each room keeps a list of who won each round and a running win count while the room is open.'
+  }
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [showFaq, setShowFaq] = useState(false);
 
   return (
     <div className="landing-page">
       <SoundToggle className="sound-toggle-floating" />
 
       <main className="landing-content">
-        <header className="logo-area">
-          <div className="bingo-brand-logo" aria-label="BINGO">
-            {'BINGO'.split('').map((letter, i) => (
-              <span key={i} className="bingo-brand-letter" style={{ animationDelay: `${i * 0.08}s` }}>
-                {letter}
-              </span>
+        <header className="landing-header">
+          <div className="brand lg" aria-label="Bingo">
+            {'BINGO'.split('').map((letter) => (
+              <span key={letter} className="brand-tile">{letter}</span>
             ))}
           </div>
-
-          <h1 className="landing-h1">Free Online Multiplayer Bingo</h1>
-          <p className="tagline">
-            The classic 5×5 number game to play live with friends. 100% free, zero ads, no login or download required!
+          <h1 className="landing-h1">Multiplayer bingo for a few friends</h1>
+          <p className="landing-lead">
+            Fill a 5×5 card with the numbers 1 to 25, then take turns calling them. First to five lines wins.
+            Plays in the browser, no sign-up.
           </p>
         </header>
 
-        <nav className="landing-buttons" aria-label="Game navigation">
-          <button
-            className="btn btn-primary btn-large start-game-btn"
-            onClick={() => navigate('/lobby')}
-          >
-            <PlayIcon size={20} className="btn-icon" />
-            Play Now
+        <nav className="landing-buttons" aria-label="Start">
+          <button className="btn btn-primary btn-large" onClick={() => navigate('/lobby')}>
+            <PlayIcon size={18} />
+            Play
           </button>
-          <button
-            className="btn btn-secondary btn-large rules-btn"
-            onClick={() => navigate('/how-to-play')}
-          >
-            <BookIcon size={20} className="btn-icon" />
-            How to Play
+          <button className="btn btn-secondary btn-large" onClick={() => navigate('/how-to-play')}>
+            <BookIcon size={18} />
+            How to play
           </button>
         </nav>
 
-        {/* Feature Highlights Grid */}
-        <section className="landing-features" aria-label="Game Features">
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-purple">
-              <UsersIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">Private Rooms & Easy Share</h2>
-              <p className="feature-desc">Create 6-digit rooms and invite friends via link or WhatsApp instantly.</p>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-green">
-              <ZapIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">100% Free & No Ads</h2>
-              <p className="feature-desc">Pure, uninterrupted gameplay with zero advertisements or payment walls.</p>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-blue">
-              <ShieldIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">No Login or Download</h2>
-              <p className="feature-desc">No accounts, passwords, or app installations. Just choose a name and play.</p>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-cyan">
-              <SparklesIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">Live Synchronized Turns</h2>
-              <p className="feature-desc">Fast real-time WebSockets keep every board and number call in perfect sync.</p>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-gold">
-              <TrophyIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">Track Older Winners</h2>
-              <p className="feature-desc">Round-by-round game history and all-time leaderboard track every champion.</p>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon-bubble bubble-rose">
-              <VolumeMuteIcon size={22} />
-            </div>
-            <div className="feature-info">
-              <h2 className="feature-title">Default Mute Music</h2>
-              <p className="feature-desc">Audio is muted by default for quiet browsing, with a convenient sound toggle.</p>
-            </div>
-          </div>
+        <section className="landing-steps" aria-label="How it works">
+          <ol>
+            <li>
+              <span className="step-num">1</span>
+              <div>
+                <strong>Make a room</strong>
+                <p>Share the 6-character code or the link. Up to 4 players.</p>
+              </div>
+            </li>
+            <li>
+              <span className="step-num">2</span>
+              <div>
+                <strong>Arrange your card</strong>
+                <p>Place 1 to 25 however you like, or let the game shuffle them.</p>
+              </div>
+            </li>
+            <li>
+              <span className="step-num">3</span>
+              <div>
+                <strong>Take turns calling</strong>
+                <p>Every call is marked on every card. Rows, columns and diagonals light up B-I-N-G-O.</p>
+              </div>
+            </li>
+          </ol>
         </section>
 
-        {/* SEO FAQ & Quick Info Accordion */}
-        <section className="landing-seo-section" aria-label="Frequently Asked Questions">
-          <button
-            className="seo-toggle-btn"
-            onClick={() => setShowFaq(!showFaq)}
-            aria-expanded={showFaq}
-          >
-            <span>{showFaq ? 'Hide FAQ & Game Details ▲' : 'Frequently Asked Questions & Game Guide ▼'}</span>
-          </button>
-
-          {showFaq && (
-            <div className="seo-faq-content">
-              <article className="seo-faq-item">
-                <h3>Is this Bingo game completely free of cost?</h3>
-                <p>Yes! It is 100% free with no in-app purchases, hidden fees, or advertisements.</p>
-              </article>
-
-              <article className="seo-faq-item">
-                <h3>Do I need an account or login to play?</h3>
-                <p>No login or registration is required. You can jump directly into a lobby by simply entering a nickname.</p>
-              </article>
-
-              <article className="seo-faq-item">
-                <h3>How do I play with friends online?</h3>
-                <p>Click "Play Now" to create a private room. You'll receive a 6-digit room code and a share link that your friends can open on their mobile phone, tablet, or desktop browser.</p>
-              </article>
-
-              <article className="seo-faq-item">
-                <h3>How are previous winners tracked?</h3>
-                <p>The game tracks round-by-round winners in the match history panel, keeping an all-time victory count for all players throughout the session.</p>
-              </article>
-            </div>
-          )}
+        <section className="landing-faq" aria-label="Questions">
+          <h2 className="eyebrow">Questions</h2>
+          {FAQ.map(({ q, a }) => (
+            <details key={q} className="faq-item">
+              <summary>{q}</summary>
+              <p>{a}</p>
+            </details>
+          ))}
         </section>
       </main>
     </div>

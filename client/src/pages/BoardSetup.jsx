@@ -1,260 +1,192 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import SoundToggle from '../components/SoundToggle';
 import StartGameModal from '../components/StartGameModal';
-import { CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon, PlayIcon, TrophyIcon, LeaveIcon, TriangleDownIcon, TriangleUpIcon, BotIcon } from '../components/Icons';
+import {
+  CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon,
+  PlayIcon, TrophyIcon, LogOutIcon, TriangleDownIcon, TriangleUpIcon, BotIcon
+} from '../components/Icons';
 import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './BoardSetup.css';
 
+const EMPTY_BOARD = () => Array.from({ length: 5 }, () => Array(5).fill(null));
+
 function generateRandomBoard() {
- const nums = Array.from({ length: 25 }, (_, i) => i + 1);
- for (let i = nums.length - 1; i > 0; i--) {
- const j = Math.floor(Math.random() * (i + 1));
- [nums[i], nums[j]] = [nums[j], nums[i]];
- }
- const board = [];
- for (let r = 0; r < 5; r++) board.push(nums.slice(r * 5, r * 5 + 5));
- return board;
+  const nums = Array.from({ length: 25 }, (_, i) => i + 1);
+  for (let i = nums.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [nums[i], nums[j]] = [nums[j], nums[i]];
+  }
+  return Array.from({ length: 5 }, (_, r) => nums.slice(r * 5, r * 5 + 5));
+}
+
+function isFullBoard(b) {
+  return Array.isArray(b) && b.length === 5 && b.flat().filter(Boolean).length === 25;
 }
 
 export default function BoardSetup() {
- const navigate = useNavigate();
- const { roomData, myPlayer, playerName, isCreator, playerId, submitBoard, startGame, leaveRoom, showNotif, setShareModalData } = useGame();
+  const navigate = useNavigate();
+  const {
+    roomData, myPlayer, playerName, isCreator, playerId,
+    submitBoard, startGame, leaveRoom, showNotif, setShareModalData
+  } = useGame();
 
- // board[r][c] = number | null
- const [board, setBoard] = useState(Array.from({ length: 5 }, () => Array(5).fill(null)));
- const [autoSeq, setAutoSeq] = useState(1); // next sequential number
- const [manualMode, setManualMode] = useState(false);
- const [manualInput, setManualInput] = useState('');
- const [manualTarget, setManualTarget] = useState(null); // {r,c}
- const [inputError, setInputError] = useState('');
- const [submitted, setSubmitted] = useState(false);
- const [startError, setStartError] = useState('');
- const [historyExpanded, setHistoryExpanded] = useState(false);
- const [showStartModal, setShowStartModal] = useState(false);
- const promptedRef = useRef(false);
- const MAX_HISTORY_ROWS = 3;
+  const [board, setBoard] = useState(EMPTY_BOARD);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [manualTarget, setManualTarget] = useState(null); // { r, c }
+  const [inputError, setInputError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [startError, setStartError] = useState('');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
+  const promptedRef = useRef(false);
+  const MAX_HISTORY_ROWS = 3;
 
- // Redirect if no room
- useEffect(() => {
- if (!roomData) navigate('/lobby');
- }, [roomData, navigate]);
+  useEffect(() => {
+    if (!roomData) navigate('/lobby');
+  }, [roomData, navigate]);
 
- const isBot = Boolean(roomData?.isBot);
- const gameIndex = roomData?.currentGameIndex ?? 0;
- const stableName = myPlayer?.name || playerName || '';
- const storageKey = roomData?.id ? `bingo_setup_${roomData.id}_${stableName}` : null;
- const legacyKey = roomData?.id && playerId ? `bingo_setup_${roomData.id}_${playerId}` : null;
+  const isBot = Boolean(roomData?.isBot);
+  const gameIndex = roomData?.currentGameIndex ?? 0;
+  const stableName = myPlayer?.name || playerName || '';
+  const storageKey = roomData?.id ? `bingo_setup_${roomData.id}_${stableName}` : null;
+  const legacyKey = roomData?.id && playerId ? `bingo_setup_${roomData.id}_${playerId}` : null;
 
- const usedNumbers = board.flat().filter(Boolean);
- const totalFilled = usedNumbers.length;
- const isBoardFull = totalFilled === 25;
- // A board can ONLY be locked in multiplayer, when 25 numbers are filled and ready/submitted is true.
- // In bot mode, board setup is always editable so user never gets locked out or stuck.
- const isLocked = !isBot && (submitted || Boolean(myPlayer?.ready)) && isBoardFull;
+  const totalFilled = board.flat().filter(Boolean).length;
+  const isBoardFull = totalFilled === 25;
+  // Only a multiplayer card locks after submit; against the bot the card stays editable.
+  const isLocked = !isBot && (submitted || Boolean(myPlayer?.ready)) && isBoardFull;
 
- // 1) Restore or Reset
- useEffect(() => {
-   if (!roomData?.id) return;
+  // Restore a card for this round from the server or local storage, otherwise start blank.
+  useEffect(() => {
+    if (!roomData?.id) return;
 
-   // In bot mode, always start setup with fresh editable state
-   if (isBot) {
-     setSubmitted(false);
-     if (Array.isArray(myPlayer?.board) && myPlayer.board.length === 5 && myPlayer.board.flat().length === 25) {
-       setBoard(myPlayer.board);
-       return;
-     }
-   }
+    if (isBot) {
+      setSubmitted(false);
+      if (isFullBoard(myPlayer?.board)) {
+        setBoard(myPlayer.board);
+        return;
+      }
+    }
 
-   // A) Multiplayer: If server already has our 5x5 board and we are ready, restore it
-   if (!isBot && myPlayer?.ready && Array.isArray(myPlayer.board) && myPlayer.board.length === 5 && myPlayer.board.flat().length === 25) {
-     setBoard(myPlayer.board);
-     setSubmitted(true);
-     return;
-   }
+    if (!isBot && myPlayer?.ready && isFullBoard(myPlayer.board)) {
+      setBoard(myPlayer.board);
+      setSubmitted(true);
+      return;
+    }
 
-   // B) Try restoring from localStorage (stable key or fallback legacy key)
-   try {
-     const saved = (storageKey ? localStorage.getItem(storageKey) : null) || (legacyKey ? localStorage.getItem(legacyKey) : null);
-     if (saved) {
-       const parsed = JSON.parse(saved);
-       if (parsed.gameIndex === gameIndex) {
-         if (parsed.board && Array.isArray(parsed.board) && parsed.board.length === 5) {
-           setBoard(parsed.board);
-         }
-         if (parsed.autoSeq) setAutoSeq(parsed.autoSeq);
-         if (!isBot && (parsed.submitted || myPlayer?.ready)) {
-           const filled = parsed.board && Array.isArray(parsed.board) ? parsed.board.flat().filter(Boolean).length : 0;
-           if (filled === 25) {
-             setSubmitted(true);
-           }
-         }
-         return;
-       }
-     }
-   } catch {}
+    try {
+      const saved = (storageKey && localStorage.getItem(storageKey)) || (legacyKey && localStorage.getItem(legacyKey));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.gameIndex === gameIndex) {
+          if (Array.isArray(parsed.board) && parsed.board.length === 5) setBoard(parsed.board);
+          if (!isBot && (parsed.submitted || myPlayer?.ready) && isFullBoard(parsed.board)) setSubmitted(true);
+          return;
+        }
+      }
+    } catch {}
 
-   // C) If server says ready in multiplayer and board is full, definitely mark submitted
-   if (!isBot && myPlayer?.ready && Array.isArray(myPlayer?.board) && myPlayer.board.flat().length === 25) {
-     setSubmitted(true);
-     return;
-   }
+    setBoard(EMPTY_BOARD());
+    setManualMode(false);
+    setManualInput('');
+    setManualTarget(null);
+    setInputError('');
+    setSubmitted(false);
+    setStartError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameIndex, roomData?.id, stableName, myPlayer?.ready, myPlayer?.board, isBot]);
 
-   // D) Otherwise fresh game reset
-   setBoard(Array.from({ length: 5 }, () => Array(5).fill(null)));
-   setAutoSeq(1);
-   setManualMode(false);
-   setManualInput('');
-   setManualTarget(null);
-   setInputError('');
-   setSubmitted(false);
-   setStartError('');
-   // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [gameIndex, roomData?.id, stableName, myPlayer?.ready, myPlayer?.board, isBot]);
-
- // 2) Save to localStorage
- useEffect(() => {
-   if (!storageKey) return;
-   const filledCount = board.flat().filter(Boolean).length;
-   // Guard: Don't overwrite saved board with empty board if player is already ready
-   if (!isBot && myPlayer?.ready && filledCount === 0) return;
-
-   // Never save submitted as true in bot mode, or if board is incomplete
-   const shouldSaveSubmitted = !isBot && (submitted || Boolean(myPlayer?.ready)) && filledCount === 25;
-
-   try {
-     localStorage.setItem(storageKey, JSON.stringify({
-       gameIndex,
-       board,
-       autoSeq,
-       submitted: shouldSaveSubmitted
-     }));
-   } catch {}
- }, [storageKey, board, autoSeq, submitted, gameIndex, myPlayer?.ready, isBot]);
+  // Keep the in-progress card in local storage so a refresh does not lose it.
+  useEffect(() => {
+    if (!storageKey) return;
+    if (!isBot && myPlayer?.ready && totalFilled === 0) return;
+    const shouldSaveSubmitted = !isBot && (submitted || Boolean(myPlayer?.ready)) && totalFilled === 25;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ gameIndex, board, submitted: shouldSaveSubmitted }));
+    } catch {}
+  }, [storageKey, board, submitted, gameIndex, myPlayer?.ready, isBot, totalFilled]);
 
   function handleCellClick(r, c) {
     if (isLocked) return;
-
-    const cellValue = board[r][c];
-
-    // Manual keyboard mode
     if (manualMode) {
       setManualTarget({ r, c });
       setInputError('');
       return;
     }
-
-    // Deselect cell (click a filled cell to clear it)
-    if (cellValue !== null) {
-      const newBoard = board.map(row => [...row]);
-      newBoard[r][c] = null;
-      setBoard(newBoard);
+    const next = board.map(row => [...row]);
+    if (board[r][c] !== null) {
+      next[r][c] = null;
+      setBoard(next);
       return;
     }
-
-    // Auto-fill next sequential number: find lowest available number 1-25 not currently on the board
-    const allUsedNow = new Set(board.flat().filter(Boolean));
-    let next = 1;
-    while (next <= 25 && allUsedNow.has(next)) {
-      next++;
-    }
-
-    if (next > 25) {
-      showNotif('All numbers 1-25 have been used!', 'info');
-      return;
-    }
-
-    const newBoard2 = board.map(row => [...row]);
-    newBoard2[r][c] = next;
-    setBoard(newBoard2);
+    const used = new Set(board.flat().filter(Boolean));
+    let n = 1;
+    while (n <= 25 && used.has(n)) n++;
+    if (n > 25) return;
+    next[r][c] = n;
+    setBoard(next);
   }
 
- function handleManualInput() {
- if (!manualTarget) { setInputError('Click a cell first'); return; }
- const num = parseInt(manualInput, 10);
- if (isNaN(num) || num < 1 || num > 25) {
- setInputError('Enter a number between 1 and 25');
- return;
- }
- const allUsed = board.flat().filter(Boolean);
- const cellHas = board[manualTarget.r][manualTarget.c];
- if (allUsed.includes(num) && cellHas !== num) {
- setInputError(`Number ${num} is already on your board!`);
- return;
- }
- const newBoard = board.map(row => [...row]);
- newBoard[manualTarget.r][manualTarget.c] = num;
- setBoard(newBoard);
- setManualInput('');
- setManualTarget(null);
- setInputError('');
- }
+  function handleManualInput() {
+    if (!manualTarget) { setInputError('Pick a cell first.'); return; }
+    const num = parseInt(manualInput, 10);
+    if (Number.isNaN(num) || num < 1 || num > 25) { setInputError('Enter a number from 1 to 25.'); return; }
+    const current = board[manualTarget.r][manualTarget.c];
+    if (board.flat().includes(num) && current !== num) { setInputError(`${num} is already on your card.`); return; }
+    const next = board.map(row => [...row]);
+    next[manualTarget.r][manualTarget.c] = num;
+    setBoard(next);
+    setManualInput('');
+    setManualTarget(null);
+    setInputError('');
+  }
 
- function handleAutoFill() {
- setBoard(generateRandomBoard());
- setAutoSeq(26);
- setManualTarget(null);
- setManualInput('');
- }
+  function handleShuffle() {
+    setBoard(generateRandomBoard());
+    setManualTarget(null);
+    setManualInput('');
+  }
 
- function handleClearBoard() {
- setBoard(Array.from({ length: 5 }, () => Array(5).fill(null)));
- setAutoSeq(1);
- setManualTarget(null);
- setManualInput('');
- }
+  function handleClearBoard() {
+    setBoard(EMPTY_BOARD());
+    setManualTarget(null);
+    setManualInput('');
+  }
 
   function handleSubmit() {
     const flat = board.flat();
     if (flat.some(n => n === null || n === undefined)) {
-      showNotif('Fill all 25 cells before submitting!', 'warning');
+      showNotif('Fill all 25 cells first.', 'warning');
       return;
     }
     if (new Set(flat).size !== 25) {
-      showNotif('Your board contains duplicate numbers! Please fix it.', 'error');
+      showNotif('Each number can only appear once.', 'error');
       return;
     }
     submitBoard(board, (res) => {
-      if (res.success) {
-        if (!isBot) setSubmitted(true);
-        if (storageKey) {
-          try {
-            localStorage.setItem(storageKey, JSON.stringify({
-              gameIndex,
-              board,
-              autoSeq,
-              submitted: !isBot
-            }));
-          } catch {}
-        }
-      } else {
-        showNotif(res.error, 'error');
+      if (!res.success) { showNotif(res.error, 'error'); return; }
+      if (!isBot) setSubmitted(true);
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, JSON.stringify({ gameIndex, board, submitted: !isBot })); } catch {}
       }
     });
   }
 
   function handleStartGame() {
     setStartError('');
-    startGame((res) => {
-      if (!res.success) setStartError(res.error);
-    });
+    startGame((res) => { if (!res.success) setStartError(res.error); });
   }
 
-  const handleShare = () => {
-    triggerShare({
-      roomId: roomData?.id,
-      showNotif,
-      onFallbackModal: setShareModalData
-    });
-  };
-
+  const handleShare = () => triggerShare({ roomId: roomData?.id, showNotif, onFallbackModal: setShareModalData });
   const handleCopyId = async () => {
     try {
       await copyToClipboard(roomData?.id || '');
-      showNotif('Room ID copied!', 'success');
+      showNotif('Room code copied.', 'success');
     } catch {
-      showNotif(`Room Code: ${roomData?.id}`, 'info');
+      showNotif(`Room code: ${roomData?.id}`, 'info');
     }
   };
 
@@ -274,311 +206,235 @@ export default function BoardSetup() {
     }
   }, [isBot, isCreator, allReady, roomData?.currentGameIndex]);
 
+  const historyList = roomData?.gameHistory || [];
+  const shouldTruncate = historyList.length > MAX_HISTORY_ROWS;
+  const visibleHistory = shouldTruncate && !historyExpanded ? historyList.slice(0, MAX_HISTORY_ROWS) : historyList;
+  const standings = [
+    ...players.map(p => ({ id: p.id, name: p.name, wins: p.wins || 0, active: true })),
+    ...Object.values(roomData?.leftPlayers || {}).map((p, idx) => ({ id: `left-${idx}`, name: p.name, wins: p.wins || 0, active: false }))
+  ].sort((a, b) => b.wins - a.wins);
+
   return (
     <div className="board-setup-page">
       {!isBot && showStartModal && (
         <StartGameModal
-          onStart={() => {
-            setShowStartModal(false);
-            handleStartGame();
-          }}
+          onStart={() => { setShowStartModal(false); handleStartGame(); }}
           onNotNow={() => setShowStartModal(false)}
           playerCount={players.length}
           roundIndex={roomData?.currentGameIndex || 1}
         />
       )}
-      {/* Header bar */}
-      <div className="setup-header">
+
+      <header className="setup-header">
         {isBot ? (
-          <div className="bot-match-badge">
-            <div className="bot-badge-icon">
-              <BotIcon size={18} />
-            </div>
-            <span className="bot-badge-text">vs BingoBot</span>
-            <span className={`diff-tag diff-${roomData?.difficulty || 'pro'}`}>
-              {(roomData?.difficulty || 'pro').toUpperCase()}
-            </span>
+          <div className="room-chip">
+            <BotIcon size={16} />
+            <span className="room-chip-text">Bot</span>
+            <span className="tag">{roomData?.difficulty || 'pro'}</span>
           </div>
         ) : (
-          <div className="room-info-bar">
-            <span className="room-label">ROOM</span>
-            <span className="room-id-display">{roomData?.id}</span>
-            <button
-              className="copy-btn"
-              title="Copy Room ID"
-              aria-label="Copy Room ID"
-              onClick={handleCopyId}
-              type="button"
-            >
-              <CopyIcon size={14} />
+          <div className="room-chip">
+            <span className="eyebrow">Room</span>
+            <span className="room-code">{roomData?.id}</span>
+            <button className="icon-btn sm plain" title="Copy room code" aria-label="Copy room code" onClick={handleCopyId} type="button">
+              <CopyIcon size={15} />
             </button>
-            <button
-              className="copy-btn share-btn"
-              title="Share Room"
-              aria-label="Share Room"
-              onClick={handleShare}
-              type="button"
-            >
-              <ShareIcon size={14} />
+            <button className="icon-btn sm plain" title="Share room" aria-label="Share room" onClick={handleShare} type="button">
+              <ShareIcon size={15} />
             </button>
           </div>
         )}
-        <div className="game-num-badge">Round #{roomData?.currentGameIndex}</div>
-        <div className="setup-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span className="tag round-tag">Round {roomData?.currentGameIndex}</span>
+        <div className="setup-header-actions">
           <SoundToggle />
-          <button
-            className="btn btn-ghost leave-btn"
-            onClick={leaveRoom}
-            type="button"
-            title="Leave Room"
-            aria-label="Leave Room"
-          >
-            <LeaveIcon size={18} />
+          <button className="icon-btn leave-btn" onClick={leaveRoom} type="button" title="Leave room" aria-label="Leave room">
+            <LogOutIcon size={18} />
           </button>
         </div>
+      </header>
+
+      <div className="setup-main">
+        <section className="board-section" aria-label="Your card">
+          <div className="setup-title">
+            {isLocked ? (
+              <span className="ready-badge"><CheckIcon size={16} /> Card submitted. Waiting for the others.</span>
+            ) : (
+              <>
+                <h2>Arrange your card</h2>
+                <span className="fill-count">{totalFilled} of 25</span>
+              </>
+            )}
+          </div>
+
+          <div className={`board-grid ${isLocked ? 'locked' : ''}`} role="grid">
+            {board.map((row, r) =>
+              row.map((val, c) => {
+                const isTarget = manualTarget?.r === r && manualTarget?.c === c;
+                return (
+                  <button
+                    key={`${r}-${c}`}
+                    className={`board-cell ${val === null ? 'empty' : 'filled'} ${isTarget ? 'targeted' : ''}`}
+                    onClick={() => handleCellClick(r, c)}
+                    disabled={isLocked}
+                    type="button"
+                    aria-label={val === null ? `Row ${r + 1}, column ${c + 1}, empty` : `Row ${r + 1}, column ${c + 1}, ${val}`}
+                  >
+                    {val ?? ''}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {!isLocked && (
+            <div className="board-controls">
+              <p className="board-help">
+                {manualMode
+                  ? 'Tap a cell, then type the number for it.'
+                  : 'Tap empty cells to fill them in order. Tap a filled cell to clear it.'}
+              </p>
+              <div className="controls-row">
+                <button
+                  className={`btn btn-sm ${manualMode ? 'btn-accent' : 'btn-outline'}`}
+                  onClick={() => { setManualMode(!manualMode); setManualTarget(null); setInputError(''); }}
+                  type="button"
+                  aria-pressed={manualMode}
+                >
+                  <PencilIcon size={14} />
+                  <span>Type numbers</span>
+                </button>
+                <button className="btn btn-sm btn-outline" onClick={handleShuffle} type="button">
+                  <ShuffleIcon size={14} />
+                  <span>Shuffle</span>
+                </button>
+                <button className="icon-btn sm clear-btn" onClick={handleClearBoard} type="button" title="Clear card" aria-label="Clear card">
+                  <TrashIcon size={16} />
+                </button>
+              </div>
+
+              {manualMode && (
+                <div className="manual-input-row">
+                  <span className="manual-hint">
+                    {manualTarget ? `Row ${manualTarget.r + 1}, column ${manualTarget.c + 1}` : 'No cell picked'}
+                  </span>
+                  <div className="manual-input-group">
+                    <input
+                      type="number"
+                      min={1}
+                      max={25}
+                      inputMode="numeric"
+                      placeholder="1 to 25"
+                      aria-label="Number for the picked cell"
+                      value={manualInput}
+                      onChange={e => setManualInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleManualInput()}
+                    />
+                    <button className="btn btn-sm btn-primary" onClick={handleManualInput} type="button">Place</button>
+                  </div>
+                  {inputError && <div className="input-error" role="alert">{inputError}</div>}
+                </div>
+              )}
+
+              <button className="btn btn-primary submit-board-btn" onClick={handleSubmit} disabled={!isBoardFull} type="button">
+                <CheckIcon size={18} />
+                <span>{isBot ? 'Start match' : 'Submit card'}</span>
+              </button>
+            </div>
+          )}
+        </section>
+
+        <aside className="players-sidebar">
+          {isBot ? (
+            <div className="bot-info">
+              <div className="bot-info-head">
+                <span className="mode-icon"><BotIcon size={20} /></span>
+                <div>
+                  <h3>Against the bot</h3>
+                  <p>{roomData?.difficulty || 'pro'} difficulty</p>
+                </div>
+              </div>
+              <p className="bot-info-tip">Fill all 25 cells, then start. The bot has its own card and takes turns with you.</p>
+            </div>
+          ) : (
+            <>
+              <h3 className="eyebrow">Players</h3>
+              <div className="players-list">
+                {players.map(p => (
+                  <div key={p.id} className={`player-row ${p.id === playerId ? 'me' : ''}`}>
+                    <span className="player-name">
+                      {p.name}
+                      {p.id === roomData?.creatorId && <CrownIcon size={13} className="host-icon" title="Host" />}
+                      {p.id === playerId && <span className="you-note">(you)</span>}
+                    </span>
+                    <span className={`player-status ${p.ready ? 'ready' : ''}`}>
+                      {p.ready ? <><CheckIcon size={13} /> Ready</> : <><ClockIcon size={13} /> Arranging</>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="ready-summary">{readyCount} of {players.length} ready</p>
+
+              {isCreator && (
+                <div className="start-section">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleStartGame}
+                    disabled={!allReady}
+                    title={!allReady ? 'Waiting for every card' : 'Start the round'}
+                    type="button"
+                  >
+                    <PlayIcon size={18} />
+                    <span>Start round</span>
+                  </button>
+                  {!allReady && (
+                    <p className="start-hint">
+                      {players.length < 2 ? 'At least 2 players are needed.' : 'Waiting for everyone to submit a card.'}
+                    </p>
+                  )}
+                  {startError && <div className="form-error">{startError}</div>}
+                </div>
+              )}
+
+              {!isCreator && allReady && (
+                <p className="waiting-creator"><ClockIcon size={14} /> Waiting for the host to start.</p>
+              )}
+            </>
+          )}
+
+          {historyList.length > 0 && (
+            <div className="history-mini">
+              <h4 className="eyebrow">Rounds</h4>
+              <ul className="round-list">
+                {visibleHistory.map(g => (
+                  <li key={g.gameIndex}>
+                    <span className="round-num">Round {g.gameIndex}</span>
+                    <span className="round-winner">
+                      {(g.draw || g.winners.length > 1) ? <span className="tag tag-info">Draw</span> : <TrophyIcon size={12} />}
+                      {' '}{g.winners.map(w => w.name).join(', ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {shouldTruncate && (
+                <button type="button" className="history-toggle-row" onClick={() => setHistoryExpanded(v => !v)} aria-expanded={historyExpanded}>
+                  <span>{historyExpanded ? 'Show fewer' : `Show all ${historyList.length}`}</span>
+                  {historyExpanded ? <TriangleUpIcon size={10} /> : <TriangleDownIcon size={10} />}
+                </button>
+              )}
+              <h4 className="eyebrow standings-head">Wins</h4>
+              <ul className="round-list">
+                {standings.map(p => (
+                  <li key={p.id} className={p.active ? '' : 'left'}>
+                    <span>{p.name}{p.active ? '' : ' (left)'}</span>
+                    <strong>{p.wins}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </aside>
       </div>
-
- <div className="setup-main">
- {/* Board area */}
- <div className="board-section">
- <div className="setup-board-title">
- {isLocked ? (
- <div className="ready-badge">
- <CheckIcon size={16} />
- <span>Board Submitted — Waiting for others...</span>
- </div>
- ) : (
- <div className="board-title-text">
- <span>Arrange Your Board</span>
- <span className="fill-count">({totalFilled}/25 Filled)</span>
- </div>
- )}
- </div>
-
- {/* Board grid */}
- <div className={`board-grid ${isLocked ? 'locked' : ''}`}>
- {board.map((row, r) =>
- row.map((val, c) => {
- const isTarget = manualTarget?.r === r && manualTarget?.c === c;
- const isEmpty = val === null;
- return (
- <button
- key={`${r}-${c}`}
- className={`board-cell ${isEmpty ? 'empty' : 'filled'} ${isTarget ? 'targeted' : ''}`}
- onClick={() => handleCellClick(r, c)}
- disabled={isLocked}
- type="button"
- >
- {val ?? ''}
- </button>
- );
- })
- )}
- </div>
-
- {/* Controls */}
- {!isLocked && (
- <div className="board-controls">
- <div className="controls-row">
- <button
- className={`btn btn-sm ${manualMode ? 'btn-accent' : 'btn-outline'}`}
- onClick={() => { setManualMode(!manualMode); setManualTarget(null); setInputError(''); }}
- type="button"
- >
- <PencilIcon size={14} />
- <span>{manualMode ? 'Auto Mode' : 'Manual Input'}</span>
- </button>
- <button className="btn btn-sm btn-outline" onClick={handleAutoFill} type="button">
- <ShuffleIcon size={14} />
- <span>Random Fill</span>
- </button>
- <button
- className="btn btn-sm btn-danger clear-icon-btn"
- onClick={handleClearBoard}
- type="button"
- title="Clear Board"
- aria-label="Clear Board"
- >
- <TrashIcon size={16} />
- </button>
- </div>
-
- {manualMode && (
- <div className="manual-input-row">
- <span className="manual-hint">
- {manualTarget ? `Target cell: Row ${manualTarget.r + 1}, Col ${manualTarget.c + 1}` : 'Click any cell on the board to target'}
- </span>
- <div className="manual-input-group">
- <input
- type="number"
- min={1} max={25}
- placeholder="1-25"
- value={manualInput}
- onChange={e => setManualInput(e.target.value)}
- onKeyDown={e => e.key === 'Enter' && handleManualInput()}
- />
- <button className="btn btn-sm btn-primary" onClick={handleManualInput} type="button">Set</button>
- </div>
- {inputError && <div className="input-error">{inputError}</div>}
- </div>
- )}
-
-
-
- <button
- className="btn btn-primary submit-board-btn"
- onClick={handleSubmit}
- disabled={!isBoardFull}
- type="button"
- >
- <CheckIcon size={18} />
- <span>{isBot ? 'Start Match vs Bot' : 'Submit Board Ready'}</span>
- </button>
- </div>
- )}
- </div>
-
- {/* Players sidebar */}
- <div className="players-sidebar">
- {isBot ? (
-   <div className="bot-match-info-card">
-     <div className="bot-info-card-header">
-       <div className="bot-avatar-circle">
-         <BotIcon size={22} />
-       </div>
-       <div>
-         <h4>Single Player Match</h4>
-         <p className="bot-info-sub">vs BingoBot ({(roomData?.difficulty || 'pro').toUpperCase()})</p>
-       </div>
-     </div>
-     <p className="bot-info-tip">
-       Fill all 25 numbers on your board, then click <strong>Start Match vs Bot</strong>. The match starts instantly!
-     </p>
-   </div>
- ) : (
-   <>
- <h3>Players in Room</h3>
- <div className="players-list">
- {players.map(p => (
- <div key={p.id} className={`player-row ${p.id === playerId ? 'me' : ''}`}>
- <div className="player-name">
- <span>{p.name}</span>
- {p.id === roomData?.creatorId && (
- <span className="creator-badge" title="Room Host">
- <CrownIcon size={13} />
- </span>
- )}
- {p.id === playerId && <span className="you-badge">(You)</span>}
- </div>
- <div className={`player-status ${p.ready ? 'ready' : 'filling'}`}>
- {p.ready ? (
- <>
- <CheckIcon size={13} />
- <span>Ready</span>
- </>
- ) : (
- <>
- <ClockIcon size={13} />
- <span>Setting up...</span>
- </>
- )}
- </div>
- </div>
- ))}
- </div>
-
- <div className="ready-summary">
- {readyCount}/{players.length} Players Ready
- </div>
-
- {isCreator && (
- <div className="start-section">
- <button
- className="btn btn-primary start-btn"
- onClick={handleStartGame}
- disabled={!allReady}
- title={!allReady ? 'All players must be ready' : 'Start the game!'}
- type="button"
- >
- <PlayIcon size={18} />
- <span>Launch Match</span>
- </button>
- {!allReady && (
- <div className="start-hint">
- {players.length < 2 ? 'Need at least 2 players' : 'Waiting for all players to submit boards'}
- </div>
- )}
- {startError && <div className="form-error">{startError}</div>}
- </div>
- )}
-
- {!isCreator && allReady && (
- <div className="waiting-creator">
- <ClockIcon size={14} />
- <span>Waiting for host to launch the match...</span>
- </div>
- )}
-   </>
- )}
-
- {roomData?.gameHistory?.length > 0 && (() => {
- const historyList = roomData.gameHistory;
- const shouldTruncate = historyList.length > MAX_HISTORY_ROWS;
- const visibleHistory = shouldTruncate && !historyExpanded
- ? historyList.slice(0, MAX_HISTORY_ROWS)
- : historyList;
-
- return (
- <div className="game-history-mini">
- <h4>Game History</h4>
- {visibleHistory.map(g => (
- <div key={g.gameIndex} className="history-row">
- <span className="history-game">Round #{g.gameIndex}</span>
- <span className="history-winner">
- <TrophyIcon size={12} className="trophy-gold" />
- <span>{g.winners.map(w => w.name).join(', ')}</span>
- </span>
- </div>
- ))}
-
- {shouldTruncate && (
- <button
- type="button"
- className="history-toggle-row"
- onClick={() => setHistoryExpanded(prev => !prev)}
- aria-expanded={historyExpanded}
- >
- <span>{historyExpanded ? 'Collapse' : `Show all (${historyList.length})`}</span>
- {historyExpanded ? (
- <TriangleUpIcon size={11} className="triangle-icon" />
- ) : (
- <TriangleDownIcon size={11} className="triangle-icon" />
- )}
- </button>
- )}
- 
- <h4 style={{ marginTop: '15px' }}>All-Time Wins</h4>
- <div className="leaderboard-list">
-  {[
-    ...players.map(p => ({ id: p.id, name: p.name, wins: p.wins || 0, active: true })),
-    ...Object.values(roomData.leftPlayers || {}).map((p, idx) => ({ id: `left-${idx}`, name: p.name, wins: p.wins || 0, active: false }))
-  ]
-  .sort((a, b) => b.wins - a.wins)
-  .map(p => (
-    <div key={p.id} className="history-row" style={{ opacity: p.active ? 1 : 0.6 }}>
-      <span>{p.name} {p.active ? '' : '(Left)'}</span>
-      <span className="history-winner">
-        <TrophyIcon size={12} className="trophy-gold" />
-        <strong>{p.wins}</strong>
-      </span>
     </div>
-  ))}
- </div>
- </div>
- );
- })()}
- </div>
- </div>
- </div>
- );
+  );
 }

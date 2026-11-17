@@ -15,7 +15,8 @@ import {
   generateSmartNotificationCampaign,
   getContextualMatrix,
   formatTimeIST,
-  formatDateIST
+  formatDateIST,
+  selectAutoPilotSlotKey
 } from './aiNotificationEngine.js';
 export { generateSmartNotificationCampaign, getContextualMatrix, formatTimeIST, formatDateIST };
 
@@ -372,7 +373,9 @@ export function recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats }) 
   if (memoryStore.users[userId]?.isAdmin) return;
   const now = Date.now();
   const todayKey = getTodayKey();
-  const currentHour = new Date().getUTCHours();
+  // Hourly activity is bucketed in IST (day key and hour must agree)
+  const hourlyDayKey = getTodayKeyIST();
+  const currentHour = getHourIST();
 
   let user = memoryStore.users[userId];
   if (!user) {
@@ -403,11 +406,11 @@ export function recordHeartbeat({ userId, isPwa, userAgent, lifetimeBotStats }) 
     recomputeAggregatedBotStats();
   }
 
-  // Update hourly activity
-  if (!memoryStore.hourlyActivity[todayKey]) {
-    memoryStore.hourlyActivity[todayKey] = new Array(24).fill(0);
+  // Update hourly activity (IST day key + IST hour)
+  if (!memoryStore.hourlyActivity[hourlyDayKey]) {
+    memoryStore.hourlyActivity[hourlyDayKey] = new Array(24).fill(0);
   }
-  memoryStore.hourlyActivity[todayKey][currentHour] = (memoryStore.hourlyActivity[todayKey][currentHour] || 0) + 1;
+  memoryStore.hourlyActivity[hourlyDayKey][currentHour] = (memoryStore.hourlyActivity[hourlyDayKey][currentHour] || 0) + 1;
 
   // Track daily unique users
   if (!memoryStore.dailyUniqueUsers[todayKey]) {
@@ -656,6 +659,20 @@ export function getTodayKeyIST(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Get the 0-23 hour in Indian Standard Time (IST / Asia/Kolkata)
+export function getHourIST(date = new Date()) {
+  const formatted = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    hour12: false,
+    hourCycle: 'h23'
+  }).format(date);
+  const hour = parseInt(formatted, 10);
+  // Some engines return "24" for midnight even with h23; normalise to 0
+  if (!Number.isFinite(hour) || hour >= 24 || hour < 0) return 0;
+  return hour;
+}
+
 // Retrieve notifications sent today + recent history for AI anti-repetition memory
 export function getSentTodayAndRecent() {
   const todayKeyIST = getTodayKeyIST();
@@ -686,7 +703,7 @@ export function getSentTodayAndRecent() {
       clicksCount: h.clicksCount || 0,
       conversionsCount: h.conversionsCount || 0
     })),
-    recentList: history.slice(0, 5).map(h => ({
+    recentList: history.slice(0, 10).map(h => ({
       id: h.id,
       title: h.title,
       message: h.message,
@@ -797,10 +814,13 @@ export async function processAiAutoPilotTick() {
     const stats = getAdminDashboardStats();
     const historyData = getSentTodayAndRecent();
     const effectiveKey = memoryStore.aiAutoPilot.geminiApiKey || process.env.GEMINI_API_KEY;
+    // Rotate the daily send window: weighted by per-slot CTR when there is delivery data, else day-of-year rotation
+    const preferredSlotKey = selectAutoPilotSlotKey(getNotificationsHistory(), now);
     const campaign = await generateSmartNotificationCampaign({
       stats,
       historyData,
-      apiKey: effectiveKey
+      apiKey: effectiveKey,
+      preferredSlotKey
     });
 
     if (campaign && campaign.suggestions && campaign.suggestions.length > 0) {
@@ -822,7 +842,7 @@ export async function processAiAutoPilotTick() {
       memoryStore.aiAutoPilot.lastScheduledDate = todayKey;
       memoryStore.aiAutoPilot.lastRunAt = Date.now();
       scheduleFlush('ai_auto_pilot');
-      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign (2hr+ buffer): "${topPick.title}" for ${formatTimeIST(triggerTime, true)}`);
+      console.log(`[AI Auto-Pilot] Auto-scheduled daily campaign (2hr+ buffer, preferred slot: ${preferredSlotKey}): "${topPick.title}" for ${formatTimeIST(triggerTime, true)}`);
     }
   } catch (err) {
     console.error('[AI Auto-Pilot] Error in auto-pilot tick:', err);
@@ -931,8 +951,8 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
   const todayUniqueUsersList = memoryStore.dailyUniqueUsers[todayKey] || [];
   const todayActiveUsers = todayUniqueUsersList.length;
 
-  // Peak activity of today (24-hour histogram)
-  const todayHourly = memoryStore.hourlyActivity[todayKey] || new Array(24).fill(0);
+  // Peak activity of today (24-hour histogram, bucketed in IST)
+  const todayHourly = memoryStore.hourlyActivity[getTodayKeyIST()] || new Array(24).fill(0);
   let peakHour = 0;
   let peakHourCount = 0;
   todayHourly.forEach((count, hour) => {

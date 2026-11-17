@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getOrCreateSecretUserId } from '../services/analytics';
+import { getDeferredInstallPrompt, clearDeferredInstallPrompt } from '../components/InstallPwaButton';
 import './AdminDashboard.css';
 
 // SVG Icons
@@ -116,6 +117,89 @@ const CloseIcon = ({ size = 16, color = "currentColor" }) => (
     <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
+
+const EyeIcon = ({ size = 18, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const EyeOffIcon = ({ size = 18, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+    <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+);
+
+const InstallIcon = ({ size = 18, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+    <line x1="12" y1="7" x2="12" y2="14" />
+    <polyline points="9 11 12 14 15 11" />
+    <line x1="10" y1="18" x2="14" y2="18" />
+  </svg>
+);
+
+// Password input with an inline show / hide toggle button
+function PasswordField({ value, onChange, placeholder, disabled, required, autoFocus, autoComplete }) {
+  const [isVisible, setIsVisible] = useState(false);
+  return (
+    <div className="admin-input-wrapper admin-input-has-toggle">
+      <input
+        type={isVisible ? 'text' : 'password'}
+        className="admin-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        required={required}
+        autoFocus={autoFocus}
+        autoComplete={autoComplete}
+      />
+      <button
+        type="button"
+        className="admin-pw-toggle"
+        onClick={() => setIsVisible((prev) => !prev)}
+        aria-label={isVisible ? 'Hide password' : 'Show password'}
+        title={isVisible ? 'Hide password' : 'Show password'}
+        disabled={disabled}
+      >
+        {isVisible ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+      </button>
+    </div>
+  );
+}
+
+function isRunningStandalone() {
+  try {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Current 0-23 hour in Indian Standard Time (Asia/Kolkata), as a 2-digit string
+function getCurrentHourIST() {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      hour12: false
+    }).format(new Date());
+    const hour = parseInt(formatted, 10);
+    // Some engines return "24" for midnight; normalise to 00
+    if (!Number.isFinite(hour) || hour >= 24 || hour < 0) return '00';
+    return String(hour).padStart(2, '0');
+  } catch {
+    return '00';
+  }
+}
 
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '0s';
@@ -301,6 +385,54 @@ export default function AdminDashboard() {
   const [isSavingAutoPilot, setIsSavingAutoPilot] = useState(false);
   const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
   const [customApiKeyInput, setCustomApiKeyInput] = useState('');
+
+  // Install app (PWA) button state
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => isRunningStandalone());
+  const [hasInstallPrompt, setHasInstallPrompt] = useState(() => Boolean(getDeferredInstallPrompt()));
+  const [showInstallHint, setShowInstallHint] = useState(false);
+  const installHintTimerRef = useRef(null);
+
+  // Keep the install button in sync if beforeinstallprompt fires after mount / app gets installed
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setHasInstallPrompt(true);
+      setShowInstallHint(false);
+    };
+    const handleAppInstalled = () => {
+      setIsStandaloneApp(true);
+      setHasInstallPrompt(false);
+      setShowInstallHint(false);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      if (installHintTimerRef.current) clearTimeout(installHintTimerRef.current);
+    };
+  }, []);
+
+  async function handleInstallApp() {
+    const p = getDeferredInstallPrompt();
+    if (p) {
+      try {
+        p.prompt();
+        const choice = await p.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          setIsStandaloneApp(true);
+        }
+      } catch (err) {
+        console.warn('[Admin] Install prompt failed:', err);
+      }
+      clearDeferredInstallPrompt();
+      setHasInstallPrompt(false);
+      return;
+    }
+    setShowInstallHint(true);
+    if (installHintTimerRef.current) clearTimeout(installHintTimerRef.current);
+    installHintTimerRef.current = setTimeout(() => setShowInstallHint(false), 8000);
+  }
 
   // Compute query dates based on rangeMode
   const queryParams = useMemo(() => {
@@ -597,7 +729,7 @@ export default function AdminDashboard() {
       if (data.success) {
         setPushFeedback({
           type: 'success',
-          text: `⏰ Campaign "${sugg.title}" scheduled for ${sugg.scheduledAtDesc || new Date(sugg.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It will be sent directly at that time.`
+          text: `Campaign "${sugg.title}" scheduled for ${sugg.scheduledAtDesc || new Date(sugg.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It will be sent directly at that time.`
         });
         fetchScheduledQueue();
       } else {
@@ -878,7 +1010,7 @@ export default function AdminDashboard() {
         if (deliveryMode === 'scheduled') {
           setPushFeedback({
             type: 'success',
-            text: `⏰ Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! It will broadcast directly to players at that time.`
+            text: `Notification scheduled successfully for ${new Date(scheduledDateTime).toLocaleString()}! It will broadcast directly to players at that time.`
           });
           setPushTitle('');
           setPushMessage('');
@@ -1044,17 +1176,14 @@ export default function AdminDashboard() {
             <form onSubmit={handleLoginSubmit}>
               <div className="admin-form-group">
                 <label>Admin Access Key</label>
-                <div className="admin-input-wrapper">
-                  <input
-                    type="password"
-                    className="admin-input"
-                    placeholder="Enter security password..."
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    disabled={lockoutRemaining > 0 || isLoggingIn}
-                    autoFocus
-                  />
-                </div>
+                <PasswordField
+                  placeholder="Enter security password..."
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  disabled={lockoutRemaining > 0 || isLoggingIn}
+                  autoComplete="current-password"
+                  autoFocus
+                />
               </div>
 
               <button
@@ -1122,6 +1251,17 @@ export default function AdminDashboard() {
         </div>
 
         <div className="admin-header-actions">
+          {!isStandaloneApp && (
+            <button
+              type="button"
+              className="admin-icon-btn admin-install-btn"
+              onClick={handleInstallApp}
+              title={hasInstallPrompt ? 'Install app' : 'Install app (use your browser menu if no prompt appears)'}
+              aria-label="Install app"
+            >
+              <InstallIcon size={18} color="#4ade80" />
+            </button>
+          )}
           <button
             type="button"
             className="admin-icon-btn"
@@ -1176,11 +1316,17 @@ export default function AdminDashboard() {
             <LogoutIcon size={18} color="#f87171" />
           </button>
         </div>
+
+        {showInstallHint && !isStandaloneApp && (
+          <div className="admin-install-hint" role="status">
+            Use your browser menu and choose Install app / Add to Home Screen.
+          </div>
+        )}
       </header>
 
       {/* Render Container Redeployment Recovery Banner */}
       {redeployAlert && (
-        <div style={{
+        <div className="admin-redeploy-banner" style={{
           margin: '0 0 18px 0',
           padding: '14px 18px',
           borderRadius: '12px',
@@ -1204,10 +1350,10 @@ export default function AdminDashboard() {
           </div>
           <button
             type="button"
-            className="admin-btn admin-btn-primary"
+            className="admin-btn admin-btn-primary admin-btn-auto"
             onClick={handleRestoreSnapshot}
             disabled={isRestoring}
-            style={{ width: 'auto', background: 'linear-gradient(135deg, #eab308, #ca8a04)', color: '#000', fontWeight: 'bold' }}
+            style={{ background: 'linear-gradient(135deg, #eab308, #ca8a04)', color: '#000', fontWeight: 'bold' }}
           >
             {isRestoring ? 'Restoring...' : 'Restore Snapshot to Server'}
           </button>
@@ -1429,7 +1575,7 @@ export default function AdminDashboard() {
             <div>
               <h3>Today's Hourly Peak Time</h3>
               <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
-                Continuous traffic distribution by hour (00:00 to 23:00 UTC)
+                Continuous traffic distribution by hour (00:00 to 23:00 IST)
               </p>
             </div>
             {hoveredHour !== null ? (
@@ -1441,7 +1587,7 @@ export default function AdminDashboard() {
                   color: '#fef08a'
                 }}
               >
-                Hour {String(hoveredHour).padStart(2, '0')}:00 - {String((hoveredHour + 1) % 24).padStart(2, '0')}:00 UTC: {todayHourly[hoveredHour] || 0} visits {todayHourly[hoveredHour] > 0 && todayHourly[hoveredHour] === Math.max(...todayHourly, 0) ? '(Peak)' : ''}
+                Hour {String(hoveredHour).padStart(2, '0')}:00 - {String((hoveredHour + 1) % 24).padStart(2, '0')}:00 IST: {todayHourly[hoveredHour] || 0} visits {todayHourly[hoveredHour] > 0 && todayHourly[hoveredHour] === Math.max(...todayHourly, 0) ? '(Peak)' : ''}
               </div>
             ) : (
               overview.peakHour && (
@@ -1452,7 +1598,8 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          <div style={{ width: '100%', height: '220px', position: 'relative' }}>
+          <div className="admin-hourly-chart-scroll">
+          <div className="admin-hourly-chart" style={{ width: '100%', height: '220px', position: 'relative' }}>
             {(() => {
               const rawHourly = stats?.todayHourlyActivity;
               const hourly = Array.isArray(rawHourly) && rawHourly.length === 24
@@ -1593,7 +1740,7 @@ export default function AdminDashboard() {
                           onMouseEnter={() => setHoveredHour(p.hr)}
                           onMouseLeave={() => setHoveredHour(null)}
                         >
-                          <title>{`${String(p.hr).padStart(2, '0')}:00 - ${String((p.hr + 1) % 24).padStart(2, '0')}:00 UTC: ${p.count} visits`}</title>
+                          <title>{`${String(p.hr).padStart(2, '0')}:00 - ${String((p.hr + 1) % 24).padStart(2, '0')}:00 IST: ${p.count} visits`}</title>
                         </rect>
                       </g>
                     );
@@ -1653,7 +1800,7 @@ export default function AdminDashboard() {
                           fill="#cbd5e1"
                           textAnchor="middle"
                         >
-                          {String(activePoint.hr).padStart(2, '0')}:00 - {String((activePoint.hr + 1) % 24).padStart(2, '0')}:00 UTC
+                          {String(activePoint.hr).padStart(2, '0')}:00 - {String((activePoint.hr + 1) % 24).padStart(2, '0')}:00 IST
                         </text>
                         <text
                           x={tipX + tipWidth / 2}
@@ -1671,6 +1818,7 @@ export default function AdminDashboard() {
                 </svg>
               );
             })()}
+          </div>
           </div>
 
           {/* Quick Metrics Bar below continuous chart */}
@@ -1698,7 +1846,7 @@ export default function AdminDashboard() {
               Active Hours: <strong style={{ color: '#38bdf8' }}>{(stats?.todayHourlyActivity || []).filter(v => v > 0).length}</strong> / 24 hrs
             </div>
             <div>
-              Current UTC: <strong style={{ color: '#cbd5e1' }}>{String(new Date().getUTCHours()).padStart(2, '0')}:00</strong>
+              Current IST: <strong style={{ color: '#cbd5e1' }}>{getCurrentHourIST()}:00</strong>
             </div>
           </div>
         </div>
@@ -2204,7 +2352,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '14px' }}>
+          <div className="admin-push-form-grid">
             <div className="admin-form-group" style={{ marginBottom: 0 }}>
               <label>Notification Title</label>
               <input
@@ -2241,9 +2389,9 @@ export default function AdminDashboard() {
 
           <button
             type="submit"
-            className="admin-btn admin-btn-primary"
+            className="admin-btn admin-btn-primary admin-btn-auto"
             disabled={isSendingPush || !pushTitle.trim() || !pushMessage.trim()}
-            style={{ width: 'auto', padding: '12px 28px' }}
+            style={{ padding: '12px 28px' }}
           >
             {deliveryMode === 'scheduled' ? (
               <>
@@ -2260,7 +2408,7 @@ export default function AdminDashboard() {
         </form>
 
         {/* Upcoming Scheduled Notifications Queue */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '32px 0 12px' }}>
+        <div className="admin-section-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '32px 0 12px' }}>
           <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ClockIcon size={18} color="#facc15" />
             <span>Upcoming Scheduled Notifications Queue ({scheduledList.length})</span>
@@ -2308,7 +2456,7 @@ export default function AdminDashboard() {
                     <td><code>{item.url || '/'}</code></td>
                     <td>
                       <span className="admin-scheduled-badge">
-                        ⏰ in {getRelativeTimeDesc(item.scheduledAt)}
+                        in {getRelativeTimeDesc(item.scheduledAt)}
                       </span>
                     </td>
                     <td>
@@ -2343,8 +2491,8 @@ export default function AdminDashboard() {
         </div>
 
         {/* Notification History Log Table */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '28px 0 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="admin-section-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '28px 0 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <h4 style={{ margin: 0, fontSize: '1rem', color: '#f1f5f9' }}>
               Dispatched Notification History ({sortedHistoryList.length})
             </h4>
@@ -2436,10 +2584,9 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0 24px' }}>
             <button
               type="button"
-              className="admin-btn admin-btn-secondary"
+              className="admin-btn admin-btn-secondary admin-btn-auto"
               onClick={() => setHistoryExpanded(!historyExpanded)}
               style={{
-                width: 'auto',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -2478,31 +2625,28 @@ export default function AdminDashboard() {
             <form onSubmit={handleChangePassword}>
               <div className="admin-form-group">
                 <label>Current Password</label>
-                <input
-                  type="password"
-                  className="admin-input"
+                <PasswordField
                   value={currentPwd}
                   onChange={(e) => setCurrentPwd(e.target.value)}
+                  autoComplete="current-password"
                   required
                 />
               </div>
               <div className="admin-form-group">
                 <label>New Password (min 8 chars)</label>
-                <input
-                  type="password"
-                  className="admin-input"
+                <PasswordField
                   value={newPwd}
                   onChange={(e) => setNewPwd(e.target.value)}
+                  autoComplete="new-password"
                   required
                 />
               </div>
               <div className="admin-form-group">
                 <label>Confirm New Password</label>
-                <input
-                  type="password"
-                  className="admin-input"
+                <PasswordField
                   value={confirmPwd}
                   onChange={(e) => setConfirmPwd(e.target.value)}
+                  autoComplete="new-password"
                   required
                 />
               </div>
@@ -2512,7 +2656,7 @@ export default function AdminDashboard() {
                 Render Free Tier rebuilds containers on git updates. To make your password permanent across all future deployments, set <code>ADMIN_PASSWORD</code> in your <strong>Render Dashboard &rarr; Environment Variables</strong>.
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              <div className="admin-modal-actions" style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
                 <button type="submit" className="admin-btn admin-btn-primary">
                   Save New Password
                 </button>
@@ -2532,14 +2676,14 @@ export default function AdminDashboard() {
       {showDbModal && (
         <div className="admin-modal-overlay" onClick={() => setShowDbModal(false)}>
           <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="admin-modal-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>Connect Free PostgreSQL Database</span>
               </h3>
               <button
                 type="button"
-                className="admin-btn admin-btn-secondary"
-                style={{ width: 'auto', padding: '4px 10px', fontSize: '0.8rem' }}
+                className="admin-btn admin-btn-secondary admin-btn-auto"
+                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
                 onClick={() => setShowDbModal(false)}
               >
                 Close
@@ -2580,11 +2724,11 @@ export default function AdminDashboard() {
               That's it! As soon as you click "Save Changes" on Render, this Bingo server will automatically connect, create the database tables, and securely preserve all history and passwords permanently!
             </div>
 
-            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+            <div className="admin-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button
                 type="button"
-                className="admin-btn admin-btn-primary"
-                style={{ width: 'auto', padding: '10px 24px' }}
+                className="admin-btn admin-btn-primary admin-btn-auto"
+                style={{ padding: '10px 24px' }}
                 onClick={() => setShowDbModal(false)}
               >
                 Got It!
@@ -2598,7 +2742,7 @@ export default function AdminDashboard() {
       {editingScheduled && (
         <div className="admin-modal-overlay" onClick={() => setEditingScheduled(null)}>
           <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="admin-modal-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <EditIcon size={18} color="#38bdf8" />
                 <span>Edit Scheduled Notification</span>
@@ -2669,19 +2813,17 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <div className="admin-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                 <button
                   type="button"
-                  className="admin-btn admin-btn-secondary"
+                  className="admin-btn admin-btn-secondary admin-btn-auto"
                   onClick={() => setEditingScheduled(null)}
-                  style={{ width: 'auto' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="admin-btn admin-btn-primary"
-                  style={{ width: 'auto' }}
+                  className="admin-btn admin-btn-primary admin-btn-auto"
                   disabled={isSavingEdit || !editTitle.trim() || !editMessage.trim()}
                 >
                   {isSavingEdit ? 'Saving Changes...' : 'Save Changes'}
@@ -2696,7 +2838,7 @@ export default function AdminDashboard() {
       {showAutoPilotModal && (
         <div className="admin-modal-overlay" onClick={() => setShowAutoPilotModal(false)}>
           <div className="admin-modal" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="admin-modal-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <SparklesIcon size={20} color="#c084fc" />
                 <span>Auto-Pilot &amp; Scheduler Settings</span>
@@ -2774,19 +2916,17 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <div className="admin-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                 <button
                   type="button"
-                  className="admin-btn admin-btn-secondary"
+                  className="admin-btn admin-btn-secondary admin-btn-auto"
                   onClick={() => setShowAutoPilotModal(false)}
-                  style={{ width: 'auto' }}
                 >
                   Close
                 </button>
                 <button
                   type="submit"
-                  className="admin-btn admin-btn-primary"
-                  style={{ width: 'auto' }}
+                  className="admin-btn admin-btn-primary admin-btn-auto"
                   disabled={isSavingAutoPilot}
                 >
                   {isSavingAutoPilot ? 'Saving...' : 'Save Configuration'}

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { BotIcon, CheckIcon } from './Icons';
 import { ALL_LINES, checkBingoLines } from '../utils/botEngine';
+import { getLayoutZoom } from '../utils/phoneLayout';
 import './BotBoardModal.css';
 
 const BINGO_LETTERS = ['B', 'I', 'N', 'G', 'O'];
@@ -9,13 +10,14 @@ const BINGO_LETTERS = ['B', 'I', 'N', 'G', 'O'];
 function computeLineCoords(containerEl, lineKey) {
   const cells = containerEl.querySelectorAll('.bot-cell');
   if (cells.length !== 25) return null;
+  const z = getLayoutZoom();
   const gridRect = containerEl.getBoundingClientRect();
 
   const center = (r, c) => {
     const rect = cells[r * 5 + c].getBoundingClientRect();
     return {
-      x: rect.left - gridRect.left + rect.width / 2,
-      y: rect.top - gridRect.top + rect.height / 2,
+      x: (rect.left - gridRect.left + rect.width / 2) / z,
+      y: (rect.top - gridRect.top + rect.height / 2) / z,
     };
   };
 
@@ -100,7 +102,8 @@ export default function BotBoardModal({
     const el = boardRef.current;
     const rect = el.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
-    setSvgSize({ w: rect.width, h: rect.height });
+    const z = getLayoutZoom();
+    setSvgSize({ w: rect.width / z, h: rect.height / z });
 
     const coords = {};
     for (const lineKey of linesList) {
@@ -135,9 +138,9 @@ export default function BotBoardModal({
   }, [updateCoords]);
 
   const difficultyLabels = {
-    beginner: 'Beginner AI',
-    intermediate: 'Intermediate AI',
-    pro: 'Pro Master AI'
+    beginner: 'Beginner',
+    intermediate: 'Intermediate',
+    pro: 'Pro'
   };
 
   return (
@@ -151,13 +154,13 @@ export default function BotBoardModal({
           </div>
           <div className="bot-header-titles">
             <div className="bot-title-row">
-              <h3>BingoBot's Board</h3>
+              <h3>Bot's board</h3>
               <span className={`difficulty-pill difficulty-${difficulty}`}>
-                {difficultyLabels[difficulty] || 'Pro AI'}
+                {difficultyLabels[difficulty] || 'Pro'}
               </span>
             </div>
             <p className="bot-header-sub">
-              Completed {linesSet.size} line{linesSet.size === 1 ? '' : 's'} • {lastMove ? `Last move: #${lastMove}` : '100% fair play verified'}
+              Completed {linesSet.size} line{linesSet.size === 1 ? '' : 's'} • {lastMove ? `Last move: #${lastMove}` : 'No moves yet'}
             </p>
           </div>
         </div>
@@ -221,7 +224,7 @@ export default function BotBoardModal({
                     y1={y1}
                     x2={x2}
                     y2={y2}
-                    stroke="#fbbf24"
+                    stroke="currentColor"
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     opacity="0.95"
@@ -234,15 +237,14 @@ export default function BotBoardModal({
 
         {/* Fairness Guarantee Note */}
         <div className="bot-fairness-note">
-          <span className="fairness-shield-icon">🛡️</span>
           <span>
-            Bot made decisions strictly using its own board and called history. It had zero access to your board.
+            The bot only saw its own board and the numbers that were called. It never saw your board.
           </span>
         </div>
 
         {/* Close Action */}
         <button className="btn btn-primary bot-modal-close-btn" onClick={onClose} type="button">
-          Close Preview
+          Close
         </button>
 
       </div>

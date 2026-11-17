@@ -1,13 +1,24 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
-import { TrophyIcon, SparklesIcon, RefreshIcon, LogOutIcon, CrownIcon, EyeIcon } from './Icons';
+import { TrophyIcon, RefreshIcon, LogOutIcon, CrownIcon, EyeIcon } from './Icons';
 import { checkBingoLines } from '../utils/botEngine';
 import BotBoardModal from './BotBoardModal';
+import Confetti from './Confetti';
+import { playSfx } from '../utils/sfx';
 import './GameOverModal.css';
 
 export default function GameOverModal() {
   const { gameOver, isCreator, replayGame, actualLeaveRoom, roomData, playerId } = useGame();
   const [showBotBoard, setShowBotBoard] = useState(false);
+
+  // One sound when the result appears.
+  useEffect(() => {
+    if (!gameOver) return;
+    const ws = gameOver.winners || [];
+    const draw = Boolean(gameOver.draw) || ws.length > 1;
+    const won = !draw && ws.some(w => w.id === playerId);
+    playSfx(won ? 'win' : draw ? 'line' : 'lose');
+  }, [gameOver, playerId]);
 
   if (!gameOver) return null;
 
@@ -20,153 +31,105 @@ export default function GameOverModal() {
 
   const botMarkedCells = useMemo(() => {
     const set = new Set();
-    if (gameOver.botMarkedCells) {
-      gameOver.botMarkedCells.forEach(n => set.add(Number(n)));
-    }
-    if (botPlayer?.markedCells) {
-      botPlayer.markedCells.forEach(n => set.add(Number(n)));
-    }
-    if (allCalled) {
-      allCalled.forEach(n => set.add(Number(n)));
-    }
-    if (lastMove !== null && lastMove !== undefined) {
-      set.add(Number(lastMove));
-    }
+    (gameOver.botMarkedCells || []).forEach(n => set.add(Number(n)));
+    (botPlayer?.markedCells || []).forEach(n => set.add(Number(n)));
+    allCalled.forEach(n => set.add(Number(n)));
+    if (lastMove !== null && lastMove !== undefined) set.add(Number(lastMove));
     return Array.from(set);
   }, [gameOver.botMarkedCells, botPlayer?.markedCells, allCalled, lastMove]);
 
   const botBingoLines = useMemo(() => {
-    if (gameOver.botBingoLines && Array.isArray(gameOver.botBingoLines) && gameOver.botBingoLines.length > 0) {
-      const recalc = checkBingoLines(botBoard, new Set(botMarkedCells));
-      return Array.from(new Set([...gameOver.botBingoLines, ...recalc]));
-    }
     if (!botBoard || botBoard.length !== 5) return [];
-    return checkBingoLines(botBoard, new Set(botMarkedCells));
+    const recalc = checkBingoLines(botBoard, new Set(botMarkedCells));
+    return Array.from(new Set([...(gameOver.botBingoLines || []), ...recalc]));
   }, [gameOver.botBingoLines, botBoard, botMarkedCells]);
 
   const winners = gameOver.winners || [];
-  const amIWinner = winners.some(w => w.id === playerId);
+  const isDraw = Boolean(gameOver.draw) || winners.length > 1;
+  const amIWinner = !isDraw && winners.some(w => w.id === playerId);
+  const round = roomData?.currentGameIndex || 1;
 
-  const handlePlayAgain = () => {
-    replayGame(); // In bot mode resets locally; in multiplayer emits to server
-  };
+  const title = isDraw ? 'Draw' : amIWinner ? 'You won' : isBot ? 'The bot won' : 'Round over';
+  const subtitle = isDraw
+    ? `${winners.map(w => w.name).join(' and ')} reached five lines on the same call.`
+    : amIWinner
+      ? `You reached five lines first in round ${round}.`
+      : isBot
+        ? `The bot reached five lines first in round ${round}.`
+        : `${winners.map(w => w.name).join(' and ')} reached five lines first.`;
 
   return (
     <>
-      <div className="modal-overlay">
-        <div className={`modal-content game-over-modal ${amIWinner ? 'is-winner-modal' : ''}`}>
-          
-          {/* Animated Celebration Backdrop Glow */}
-          <div className="modal-glow-effect" />
-
-          {/* Hero Pedestal Icon */}
-          <div className={`modal-hero-pedestal ${amIWinner ? 'pedestal-victory' : 'pedestal-default'}`}>
-            <div className="pedestal-ring">
-              <TrophyIcon size={38} className="hero-trophy-svg" />
-            </div>
-            {amIWinner && (
-              <>
-                <SparklesIcon size={18} className="sparkle-float sparkle-1" />
-                <SparklesIcon size={14} className="sparkle-float sparkle-2" />
-              </>
-            )}
+      {amIWinner && <Confetti />}
+      <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
+        <div className={`modal-content game-over-modal ${amIWinner ? 'is-winner' : ''}`}>
+          <div className="game-over-badge">
+            <TrophyIcon size={28} />
           </div>
 
-          <div className="modal-header-text">
-            <h2 className={amIWinner ? 'victory-title' : 'match-title'}>
-              {amIWinner ? 'BINGO Victory!' : (isBot ? 'BingoBot Won!' : 'Match Finished')}
-            </h2>
-            <p className="modal-subtitle">
-              {amIWinner
-                ? 'Outstanding play! You completed 5 lines first.'
-                : (isBot ? 'BingoBot completed 5 lines first. Better luck next round!' : 'Well played! Check out the match result below.')}
-            </p>
+          <div className="game-over-head">
+            <h2 id="game-over-title">{title}</h2>
+            <p>{subtitle}</p>
           </div>
 
-          {/* Winners Section */}
-          <div className="winners-showcase">
-            <div className="winners-label">
-              <span>Winner{winners.length > 1 ? 's' : ''}</span>
-              <span className="round-badge">Round #{roomData?.currentGameIndex || 1}</span>
+          <div className="winners-list">
+            <div className="winners-head">
+              <span className="eyebrow">{isDraw ? 'Drawn between' : 'Winner'}</span>
+              <span className="tag">Round {round}</span>
             </div>
-
-            <div className="winners-card-stack">
-              {winners.map(w => {
-                const isThisPlayer = w.id === playerId;
-                return (
-                  <div key={w.id} className={`winner-podium-card ${isThisPlayer ? 'current-player-winner' : ''}`}>
-                    <div className="winner-podium-left">
-                      <span className="winner-icon-bubble">
-                        <TrophyIcon size={16} />
-                      </span>
-                      <div className="winner-info">
-                        <span className="winner-display-name">
-                          {w.name}
-                          {isThisPlayer && <span className="winner-you-pill">You</span>}
-                          {!isBot && w.id === roomData?.creatorId && (
-                            <span className="winner-host-pill" title="Host">
-                              <CrownIcon size={11} />
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="winner-status-tag">Champion</span>
-                  </div>
-                );
-              })}
-            </div>
+            {winners.map(w => (
+              <div key={w.id} className={`winner-row ${w.id === playerId ? 'is-you' : ''}`}>
+                <TrophyIcon size={16} />
+                <span className="winner-name">{w.name}</span>
+                {w.id === playerId && <span className="tag tag-brass">You</span>}
+                {!isBot && w.id === roomData?.creatorId && (
+                  <span className="winner-host" title="Host"><CrownIcon size={12} /></span>
+                )}
+              </div>
+            ))}
           </div>
 
-          {/* Actions */}
           <div className="game-over-actions">
             {isBot ? (
               <>
-                <div className="modal-buttons modal-buttons-bot">
-                  <button className="btn btn-primary action-btn-play" onClick={handlePlayAgain} type="button">
-                    <RefreshIcon size={16} />
-                    <span>Play Next Round</span>
-                  </button>
-                  <button className="btn btn-secondary action-btn-view-bot" onClick={() => setShowBotBoard(true)} type="button">
-                    <EyeIcon size={16} />
-                    <span>View Bot's Board</span>
-                  </button>
-                  <button className="btn btn-ghost action-btn-leave" onClick={() => actualLeaveRoom(true)} type="button">
-                    <LogOutIcon size={15} />
-                    <span>End & Leave</span>
-                  </button>
-                </div>
+                <button className="btn btn-primary" onClick={() => replayGame()} type="button">
+                  <RefreshIcon size={16} />
+                  <span>Next round</span>
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowBotBoard(true)} type="button">
+                  <EyeIcon size={16} />
+                  <span>See the bot's card</span>
+                </button>
+                <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
+                  <LogOutIcon size={15} />
+                  <span>Leave</span>
+                </button>
               </>
             ) : isCreator ? (
               <>
-                <p className="host-prompt">Host a replay with everyone currently in the room:</p>
-                <div className="modal-buttons">
-                  <button className="btn btn-primary action-btn-play" onClick={handlePlayAgain} type="button">
-                    <RefreshIcon size={16} />
-                    <span>Play Next Round</span>
-                  </button>
-                  <button className="btn btn-ghost action-btn-leave" onClick={() => actualLeaveRoom(true)} type="button">
-                    <LogOutIcon size={15} />
-                    <span>End & Leave</span>
-                  </button>
-                </div>
+                <p className="host-note">Everyone still in the room will join the next round.</p>
+                <button className="btn btn-primary" onClick={() => replayGame()} type="button">
+                  <RefreshIcon size={16} />
+                  <span>Next round</span>
+                </button>
+                <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
+                  <LogOutIcon size={15} />
+                  <span>Close room and leave</span>
+                </button>
               </>
             ) : (
               <>
-                <div className="waiting-host-box">
-                  <div className="waiting-pulse-dot" />
-                  <span>Waiting for the room host to start the next round...</span>
+                <div className="waiting-host" role="status">
+                  <span className="waiting-dot" aria-hidden="true" />
+                  <span>Waiting for the host to start the next round</span>
                 </div>
-                <div className="modal-buttons">
-                  <button className="btn btn-ghost action-btn-leave full-width" onClick={() => actualLeaveRoom(true)} type="button">
-                    <LogOutIcon size={15} />
-                    <span>Leave Room</span>
-                  </button>
-                </div>
+                <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
+                  <LogOutIcon size={15} />
+                  <span>Leave room</span>
+                </button>
               </>
             )}
           </div>
-
         </div>
       </div>
 
@@ -183,4 +146,3 @@ export default function GameOverModal() {
     </>
   );
 }
-

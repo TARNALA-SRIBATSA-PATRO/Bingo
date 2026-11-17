@@ -61,7 +61,7 @@ export default function LeaveModal({ onClose }) {
         ) : isCreator ? (
           <div className="creator-warning">
             <p className="warning-text">
-              <strong>Warning:</strong> You are the room creator. If you leave now, the game will be over for everyone!
+              <strong>Warning:</strong> You are the room creator. If you leave now, the game will end for everyone.
             </p>
             
             {otherPlayers.length > 0 ? (

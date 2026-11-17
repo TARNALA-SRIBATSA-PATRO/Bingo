@@ -54,10 +54,10 @@ export default function BackNavigationHandler() {
 
         // On main lobby screen: ask confirmation to return to Home
         setModalConfig({
-          title: 'Return to Home?',
-          message: 'Are you sure you want to leave the Game Arena and return to the main menu?',
-          confirmText: 'Return Home',
-          cancelText: 'Stay in Arena',
+          title: 'Leave the lobby?',
+          message: 'You will go back to the home page.',
+          confirmText: 'Leave',
+          cancelText: 'Stay',
           confirmVariant: 'danger',
           onConfirm: () => {
             setModalConfig(null);
@@ -76,10 +76,10 @@ export default function BackNavigationHandler() {
       // 5. On Home / Landing Page (/)
       if (pathname === '/') {
         setModalConfig({
-          title: 'Exit Bingo?',
-          message: 'Are you sure you want to leave the app? You can return anytime to play!',
-          confirmText: 'Exit App',
-          cancelText: 'Stay & Play',
+          title: 'Leave the app?',
+          message: 'You can come back any time.',
+          confirmText: 'Exit',
+          cancelText: 'Stay',
           confirmVariant: 'danger',
           onConfirm: () => {
             setModalConfig(null);

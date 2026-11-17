@@ -3,36 +3,26 @@ import './StartGameModal.css';
 
 export default function StartGameModal({ onStart, onNotNow, playerCount = 2, roundIndex = 1 }) {
   return (
-    <div className="modal-overlay" onClick={onNotNow}>
+    <div className="modal-overlay" onClick={onNotNow} role="dialog" aria-modal="true" aria-labelledby="start-title">
       <div className="modal-content start-game-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="start-modal-icon-circle">
-          <CheckIcon size={28} />
+        <div className="start-modal-icon">
+          <CheckIcon size={24} />
         </div>
 
-        <div className="start-modal-header">
-          <h3>All Players Ready!</h3>
-          <p className="start-modal-subtitle">
-            All <span className="start-modal-highlight">{playerCount} players</span> have submitted their boards.
-            Ready to launch <span className="start-modal-highlight">Round #{roundIndex}</span>?
+        <div className="start-modal-head">
+          <h3 id="start-title">Everyone is ready</h3>
+          <p>
+            All {playerCount} players have submitted their cards. Start round {roundIndex}?
           </p>
         </div>
 
         <div className="start-modal-actions">
-          <button
-            className="btn btn-primary"
-            onClick={onStart}
-            type="button"
-          >
+          <button className="btn btn-primary" onClick={onStart} type="button">
             <PlayIcon size={18} />
-            <span>Start Game</span>
+            <span>Start round</span>
           </button>
-
-          <button
-            className="btn btn-ghost"
-            onClick={onNotNow}
-            type="button"
-          >
-            <span>Not Now</span>
+          <button className="btn btn-ghost" onClick={onNotNow} type="button">
+            Not yet
           </button>
         </div>
       </div>

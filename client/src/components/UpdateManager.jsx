@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import './UpdateManager.css';
 
-const CURRENT_APP_VERSION = '2.5.7';
+// Injected by vite.config.js so there is one source of truth for the version.
+const CURRENT_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 
 export default function UpdateManager() {
   const location = useLocation();
@@ -90,7 +91,6 @@ export default function UpdateManager() {
     const hasPendingReload = Boolean(window.__BINGO_PENDING_RELOAD__);
 
     if (targetVersion || hasPendingReload) {
-      console.log(`[UpdateManager] User entered ${location.pathname}. Starting postponed update to ${targetVersion || 'latest'}...`);
       executeApplyUpdate(targetVersion || CURRENT_APP_VERSION);
     }
   }, [isSafeToUpdate, pendingVersion, location.pathname, executeApplyUpdate]);
@@ -110,13 +110,10 @@ export default function UpdateManager() {
       const data = await res.json();
 
       if (data?.version && data.version !== CURRENT_APP_VERSION) {
-        console.log(`[UpdateManager] New version detected: ${data.version} (current: ${CURRENT_APP_VERSION})`);
 
         if (isSafeToUpdate) {
-          console.log(`[UpdateManager] User is on ${location.pathname}. Updating now...`);
           executeApplyUpdate(data.version);
         } else {
-          console.log(`[UpdateManager] User is currently in game/room (${location.pathname}). Postponing update until user enters lobby or home.`);
           setPendingVersion(data.version);
           try {
             sessionStorage.setItem('bingo_pending_version', data.version);

@@ -152,7 +152,8 @@ const io = new Server(httpServer, {
   maxHttpBufferSize: 64 * 1024, // 64KB max packet size prevents memory exhaustion
   pingInterval: 25000,
   pingTimeout: 20000,
-  cleanupEmptyChildNamespaces: true
+  cleanupEmptyChildNamespaces: true,
+  connectionStateRecovery: { maxDisconnectionDuration: 2 * 60 * 1000 }
 });
 
 // Protect single-threaded Node.js event loop from packet flood / spam
@@ -227,11 +228,23 @@ function shuffleArray(array) {
   return arr;
 }
 
+// Remove a player from the turn order without skipping anyone's turn
+function removeFromTurnOrder(room, socketId) {
+  const idx = room.turnOrder.indexOf(socketId);
+  if (idx === -1) return;
+  room.turnOrder.splice(idx, 1);
+  if (idx < room.currentTurnIndex) room.currentTurnIndex--;
+  if (room.turnOrder.length) room.currentTurnIndex %= room.turnOrder.length;
+  else room.currentTurnIndex = 0;
+}
+
 // Find the winner from the last game in the room (if they are still active in the room)
 function getLastWinnerPlayer(room) {
   if (!room.gameHistory || room.gameHistory.length === 0) return null;
   const lastGame = room.gameHistory[room.gameHistory.length - 1];
   if (!lastGame || !Array.isArray(lastGame.winners) || lastGame.winners.length === 0) return null;
+  // A draw has no single winner; fall back to the random start
+  if (lastGame.draw || lastGame.winners.length > 1) return null;
 
   const validWinners = [];
   for (const w of lastGame.winners) {
@@ -259,6 +272,7 @@ function broadcastRoom(room) {
     markedCells: Array.from(p.markedCells || []),
     bingoLines: Array.from(p.bingoLines || []),
     wins: p.wins || 0,
+    connected: p.connected !== false,
     _rawBoard: p.board || []
   }));
 
@@ -285,7 +299,8 @@ function broadcastRoom(room) {
         board: p.id === socketId ? p._rawBoard : [],
         markedCells: p.markedCells,
         bingoLines: p.bingoLines,
-        wins: p.wins
+        wins: p.wins,
+        connected: p.connected
       }));
       targetSocket.emit('room:update', { ...baseData, players });
     }
@@ -434,7 +449,8 @@ io.on('connection', (socket) => {
       markedCells: new Set(),
       bingoLines: new Set(),
       ready: false,
-      wins: 0
+      wins: 0,
+      connected: true
     };
 
     rooms[roomId] = {
@@ -491,7 +507,8 @@ io.on('connection', (socket) => {
       markedCells: new Set(),
       bingoLines: new Set(),
       ready: false,
-      wins: 0
+      wins: 0,
+      connected: true
     };
 
     room.players[socket.id] = player;
@@ -587,6 +604,7 @@ io.on('connection', (socket) => {
     // Mark number for all players and check bingo
     const winners = [];
     for (const player of Object.values(room.players)) {
+      if (!Array.isArray(player.board) || player.board.length !== 5) continue;
       const flat = player.board.flat();
       if (flat.includes(number)) {
         player.markedCells.add(number);
@@ -603,10 +621,15 @@ io.on('connection', (socket) => {
 
     if (winners.length > 0) {
       room.status = 'finished';
-      winners.forEach(w => { w.wins = (w.wins || 0) + 1; });
+      // Two or more players completing five lines on the same call is a draw: no wins awarded
+      const draw = winners.length > 1;
+      if (!draw) {
+        winners.forEach(w => { w.wins = (w.wins || 0) + 1; });
+      }
       room.gameHistory.push({
         gameIndex: room.currentGameIndex,
-        winners: winners.map(w => ({ name: w.name, id: w.id }))
+        winners: winners.map(w => ({ name: w.name, id: w.id })),
+        ...(draw ? { draw: true } : {})
       });
       // Cap game history to 20 to prevent unbounded memory growth
       if (room.gameHistory.length > 20) {
@@ -620,6 +643,7 @@ io.on('connection', (socket) => {
       broadcastRoom(room);
       io.to(roomId).emit('game:over', {
         winners: winners.map(w => ({ name: w.name, id: w.id, wins: w.wins })),
+        draw,
         gameHistory: room.gameHistory
       });
       return cb({ success: true });
@@ -706,11 +730,7 @@ io.on('connection', (socket) => {
     }
 
     delete room.players[socket.id];
-    const idx = room.turnOrder.indexOf(socket.id);
-    if (idx !== -1) {
-      room.turnOrder.splice(idx, 1);
-      if (room.currentTurnIndex >= room.turnOrder.length) room.currentTurnIndex = 0;
-    }
+    removeFromTurnOrder(room, socket.id);
 
     if (Object.keys(room.players).length === 0) {
       cleanupRoom(roomId);
@@ -756,7 +776,11 @@ io.on('connection', (socket) => {
       room.players[socket.id] = existingPlayer;
       delete room.leftPlayers[oldId];
       if (room.status === 'playing') {
-        room.turnOrder.push(socket.id);
+        // Board was lost when they left; spectate until the next round
+        existingPlayer.board = [];
+        existingPlayer.markedCells = new Set();
+        existingPlayer.bingoLines = new Set();
+        existingPlayer.ready = false;
       }
     } else if (oldId !== socket.id) {
       room.players[socket.id] = existingPlayer;
@@ -831,13 +855,7 @@ io.on('connection', (socket) => {
       delete room.players[socket.id];
 
       // Remove from turn order if playing
-      const idx = room.turnOrder.indexOf(socket.id);
-      if (idx !== -1) {
-        room.turnOrder.splice(idx, 1);
-        if (room.currentTurnIndex >= room.turnOrder.length) {
-          room.currentTurnIndex = 0;
-        }
-      }
+      removeFromTurnOrder(room, socket.id);
 
       // If creator left, assign new creator
       if (room.creatorId === socket.id && Object.keys(room.players).length > 0) {
@@ -1077,6 +1095,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Bingo high-performance server running on http://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+httpServer.listen(PORT, HOST, () => {
+  console.log(`Bingo server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 });

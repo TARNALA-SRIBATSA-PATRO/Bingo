@@ -45,11 +45,7 @@ function App() {
                 <Route path="/board-setup" element={<BoardSetup />} />
                 <Route path="/game" element={<GamePage />} />
                 <Route path="/legal" element={<LegalPage />} />
-                
-                {/* Obfuscated secure administration portal */}
                 <Route path="/sys-admin-panel-92f7" element={<AdminDashboard />} />
-
-                {/* Honeypots & Decoys: redirect predictable paths to home */}
                 <Route path="/admin" element={<Navigate to="/" replace />} />
                 <Route path="/dashboard" element={<Navigate to="/" replace />} />
                 <Route path="/cpanel" element={<Navigate to="/" replace />} />

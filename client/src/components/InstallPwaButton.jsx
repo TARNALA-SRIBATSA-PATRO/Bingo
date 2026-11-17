@@ -11,6 +11,17 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Shared access to the captured install prompt (used by the admin dashboard)
+// eslint-disable-next-line react-refresh/only-export-components
+export function getDeferredInstallPrompt() {
+  return savedDeferredPrompt;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function clearDeferredInstallPrompt() {
+  savedDeferredPrompt = null;
+}
+
 const InstallPwaButton = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(savedDeferredPrompt);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -132,7 +143,7 @@ const InstallPwaButton = () => {
               </svg>
             </li>
             <li>
-              Scroll down and tap <strong>Add to Home Screen ➕</strong>
+              Scroll down and tap <strong>Add to Home Screen</strong>
             </li>
           </ol>
           <button className="pwa-ios-done-btn" onClick={() => setShowIosGuide(false)}>
@@ -145,7 +156,7 @@ const InstallPwaButton = () => {
         <button 
           className="pwa-install-btn" 
           onClick={handleInstallClick}
-          title="Install Bingo as a standalone app"
+          title="Install app"
           aria-label="Install Bingo App"
         >
           <span className="pwa-install-icon">

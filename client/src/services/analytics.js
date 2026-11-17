@@ -189,7 +189,6 @@ export async function syncOfflineQueue() {
     if (res.ok) {
       // Successfully pushed: clear local memory queue
       localStorage.removeItem(OFFLINE_QUEUE_KEY);
-      console.log(`[Analytics] Successfully synced ${events.length} offline events.`);
     }
   } catch (err) {
     console.warn('[Analytics] Sync retry scheduled:', err);

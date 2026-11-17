@@ -1,0 +1,16 @@
+{
+  "id": "/sys-admin-panel-92f7",
+  "name": "Bingo Admin",
+  "short_name": "Bingo Admin",
+  "description": "Metrics and push notifications for the Bingo game.",
+  "start_url": "/sys-admin-panel-92f7",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e1612",
+  "theme_color": "#0e1612",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

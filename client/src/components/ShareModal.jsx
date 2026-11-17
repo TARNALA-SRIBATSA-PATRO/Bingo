@@ -27,7 +27,7 @@ export default function ShareModal({ data, onClose }) {
   };
 
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
-    `Join my BINGO room!\nRoom Code: *${roomId}*\nPlay here: ${shareUrl}`
+    `Join my BINGO room.\nRoom Code: *${roomId}*\nPlay here: ${shareUrl}`
   )}`;
 
   return (
@@ -38,7 +38,12 @@ export default function ShareModal({ data, onClose }) {
             <ShareIcon size={20} />
             <h3>Share Game</h3>
           </div>
-          <button className="share-close-btn" onClick={onClose} type="button">&times;</button>
+          <button className="share-close-btn" onClick={onClose} type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
         <p className="share-modal-subtitle">

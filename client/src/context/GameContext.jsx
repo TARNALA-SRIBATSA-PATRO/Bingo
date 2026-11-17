@@ -93,30 +93,39 @@ export function GameProvider({ children }) {
     }
   }, [navigate]);
 
-  // 2. Auto-rejoin on socket connect (Multiplayer only)
+  // 2. Auto-rejoin on EVERY socket connect (Multiplayer only).
+  // Each reconnect gives the server a new socket id, so the saved session must
+  // be re-attached every time, not just on the first connect.
   useEffect(() => {
     if (!socket) return;
-    const session = loadSession();
-    if (session && session.roomId && session.playerName && session.playerId && !session.isBot) {
+
+    const doRejoin = () => {
+      const session = loadSession();
+      if (!session || !session.roomId || !session.playerName || !session.playerId || session.isBot) return;
       const cleanRoomId = session.roomId.trim().toUpperCase();
       socket.emit('room:rejoin', {
         name: session.playerName.trim(),
         roomId: cleanRoomId,
         oldPlayerId: session.playerId
       }, (res) => {
-        if (res.success) {
+        if (res && res.success) {
           setPlayerId(res.playerId);
           saveSession({ ...session, roomId: cleanRoomId, playerId: res.playerId });
-          if (res.status === 'playing') {
-            navigate('/game');
-          } else {
-            navigate('/board-setup');
-          }
+          const target = res.status === 'playing' ? '/game' : '/board-setup';
+          if (window.location.pathname !== target) navigate(target);
         } else {
-          clearSession();
+          const err = res?.error;
+          if (err === 'Room not found' || err === 'Player not found in room') clearSession();
         }
       });
-    }
+    };
+
+    socket.on('connect', doRejoin);
+    if (socket.connected) doRejoin();
+
+    return () => {
+      socket.off('connect', doRejoin);
+    };
   }, [socket, navigate]);
 
   // 3. Socket event listeners for multiplayer rooms
@@ -143,9 +152,9 @@ export function GameProvider({ children }) {
       navigate('/board-setup');
     });
 
-    socket.on('game:over', ({ winners, gameHistory }) => {
+    socket.on('game:over', ({ winners, gameHistory, draw }) => {
       if (roomData?.isBot) return;
-      setGameOver({ winners, gameHistory });
+      setGameOver({ winners, gameHistory, draw: Boolean(draw) });
       trackPushConversion();
     });
 
@@ -204,9 +213,7 @@ export function GameProvider({ children }) {
     };
   }, [socket, navigate, showNotif, roomData?.isBot]);
 
-  // -------------------------------------------------------------
-  // BOT MODE INITIALIZATION (100% Offline Ready)
-  // -------------------------------------------------------------
+  // Bot mode: everything runs locally.
   const startBotGame = useCallback((name, difficulty = 'pro', cb) => {
     const cleanName = (name || '').trim();
     const myId = 'player-user';
@@ -310,16 +317,14 @@ export function GameProvider({ children }) {
     });
   }, []);
 
-  // -------------------------------------------------------------
-  // MULTIPLAYER ROOM CREATION & JOINING
-  // -------------------------------------------------------------
+  // Multiplayer: create and join rooms.
   const createRoom = useCallback((name, cb) => {
     const cleanName = (name || '').trim();
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       if (cb) cb({ 
         success: false, 
-        error: 'You appear to be offline. Could not connect to the internet to create a room. Try playing against BingoBot offline!' 
+        error: 'You are offline. Making a room needs a connection. You can still play against the bot.' 
       });
       return;
     }
@@ -327,7 +332,7 @@ export function GameProvider({ children }) {
     if (!socket || !socket.connected) {
       if (cb) cb({ 
         success: false, 
-        error: 'Unable to connect to the game server. Please check your internet connection or try again in a few moments.' 
+        error: 'Could not reach the game server. Check your connection and try again.' 
       });
       return;
     }
@@ -338,7 +343,7 @@ export function GameProvider({ children }) {
         responded = true;
         if (cb) cb({
           success: false,
-          error: 'Connection timed out. The server is currently unreachable. Please check your internet connection.'
+          error: 'The connection timed out. Check your connection and try again.'
         });
       }
     }, 6000);
@@ -354,7 +359,7 @@ export function GameProvider({ children }) {
         saveSession({ playerName: cleanName, playerId: res.playerId, roomId: res.roomId, isBot: false });
         navigate('/board-setup');
       }
-      if (cb) cb(res || { success: false, error: 'Failed to create room' });
+      if (cb) cb(res || { success: false, error: 'Could not create the room.' });
     });
   }, [socket, navigate]);
 
@@ -365,7 +370,7 @@ export function GameProvider({ children }) {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       if (cb) cb({ 
         success: false, 
-        error: 'You appear to be offline. Could not connect to the internet to join a room. Try playing against BingoBot offline!' 
+        error: 'You are offline. Joining a room needs a connection. You can still play against the bot.' 
       });
       return;
     }
@@ -373,7 +378,7 @@ export function GameProvider({ children }) {
     if (!socket || !socket.connected) {
       if (cb) cb({ 
         success: false, 
-        error: 'Unable to connect to the game server. Please check your internet connection or try again in a few moments.' 
+        error: 'Could not reach the game server. Check your connection and try again.' 
       });
       return;
     }
@@ -384,7 +389,7 @@ export function GameProvider({ children }) {
         responded = true;
         if (cb) cb({
           success: false,
-          error: 'Connection timed out. The server is currently unreachable. Please check your internet connection.'
+          error: 'The connection timed out. Check your connection and try again.'
         });
       }
     }, 6000);
@@ -400,13 +405,11 @@ export function GameProvider({ children }) {
         saveSession({ playerName: cleanName, playerId: res.playerId, roomId: cleanRoomId, isBot: false });
         navigate('/board-setup');
       }
-      if (cb) cb(res || { success: false, error: 'Failed to join room' });
+      if (cb) cb(res || { success: false, error: 'Could not join the room.' });
     });
   }, [socket, navigate]);
 
-  // -------------------------------------------------------------
-  // SUBMIT BOARD
-  // -------------------------------------------------------------
+  // Submit the card.
   const submitBoard = useCallback((board, cb) => {
     if (roomData?.isBot) {
       const myId = playerId || 'player-user';
@@ -444,7 +447,7 @@ export function GameProvider({ children }) {
       let firstTurnId = null;
       if (roomData.gameHistory && roomData.gameHistory.length > 0) {
         const lastGame = roomData.gameHistory[roomData.gameHistory.length - 1];
-        if (lastGame?.winners?.length > 0) {
+        if (lastGame?.winners?.length > 0 && !lastGame.draw && lastGame.winners.length === 1) {
           const winnerMatch = lastGame.winners.find(w => w.id === myId || w.id === botId);
           if (winnerMatch) {
             firstTurnId = winnerMatch.id;
@@ -495,13 +498,11 @@ export function GameProvider({ children }) {
     });
   }, [roomData?.isBot, socket]);
 
-  // -------------------------------------------------------------
-  // CALL NUMBER (User or Bot)
-  // -------------------------------------------------------------
+  // Call a number (player or bot).
   const callNumber = useCallback((number, cb, isBotCall = false) => {
     if (roomData?.isBot) {
       if (roomData.status !== 'playing') {
-        if (cb) cb({ success: false, error: 'Game not in progress' });
+        if (cb) cb({ success: false, error: 'The game is not in progress.' });
         return;
       }
 
@@ -510,7 +511,7 @@ export function GameProvider({ children }) {
 
       // Turn Validation Guard: Only allow moves during the caller's legitimate turn
       if (!isBotCall && currentTurnPlayerId !== effectivePlayerId) {
-        if (cb) cb({ success: false, error: "Not your turn! Wait for BingoBot's move." });
+        if (cb) cb({ success: false, error: 'It is not your turn. Wait for the bot to call a number.' });
         return;
       }
       if (isBotCall && currentTurnPlayerId !== 'bot-opponent') {
@@ -520,11 +521,11 @@ export function GameProvider({ children }) {
 
       const num = parseInt(number, 10);
       if (roomData.calledNumbers.includes(num)) {
-        if (cb) cb({ success: false, error: 'Number already called' });
+        if (cb) cb({ success: false, error: 'That number was already called.' });
         return;
       }
       if (isNaN(num) || num < 1 || num > 25) {
-        if (cb) cb({ success: false, error: 'Invalid number' });
+        if (cb) cb({ success: false, error: 'That number is not valid.' });
         return;
       }
 
@@ -563,22 +564,24 @@ export function GameProvider({ children }) {
 
       // 3. Check for 5 lines victory (B-I-N-G-O)
       const winners = [];
+      // Both reaching five lines on the same call is a draw: no wins awarded
+      const draw = userCompletedLines.length >= 5 && botCompletedLines.length >= 5;
       if (userCompletedLines.length >= 5) {
+        if (!draw) updatedUserPlayer.wins = (updatedUserPlayer.wins || 0) + 1;
         winners.push({
           id: updatedUserPlayer.id,
           name: updatedUserPlayer.name,
-          wins: (updatedUserPlayer.wins || 0) + 1
+          wins: updatedUserPlayer.wins || 0
         });
-        updatedUserPlayer.wins = (updatedUserPlayer.wins || 0) + 1;
       }
 
       if (botCompletedLines.length >= 5) {
+        if (!draw) updatedBotPlayer.wins = (updatedBotPlayer.wins || 0) + 1;
         winners.push({
           id: updatedBotPlayer.id,
           name: updatedBotPlayer.name,
-          wins: (updatedBotPlayer.wins || 0) + 1
+          wins: updatedBotPlayer.wins || 0
         });
-        updatedBotPlayer.wins = (updatedBotPlayer.wins || 0) + 1;
       }
 
       if (winners.length > 0) {
@@ -600,7 +603,8 @@ export function GameProvider({ children }) {
 
         const gameHistoryEntry = {
           gameIndex: roomData.currentGameIndex,
-          winners: winners.map(w => ({ name: w.name, id: w.id }))
+          winners: winners.map(w => ({ name: w.name, id: w.id })),
+          ...(draw ? { draw: true } : {})
         };
         const nextGameHistory = [...(roomData.gameHistory || []), gameHistoryEntry];
 
@@ -621,6 +625,7 @@ export function GameProvider({ children }) {
         syncBotSession(finishedRoom);
         setGameOver({
           winners,
+          draw,
           gameHistory: nextGameHistory,
           botBoard,
           botMarkedCells: Array.from(newBotMarked),
@@ -657,9 +662,7 @@ export function GameProvider({ children }) {
     });
   }, [roomData, playerId, syncBotSession, socket]);
 
-  // -------------------------------------------------------------
-  // BOT AUTOMATIC TURN EXECUTION
-  // -------------------------------------------------------------
+  // The bot takes its turn automatically.
   useEffect(() => {
     if (!roomData?.isBot || roomData?.status !== 'playing' || gameOver) return;
 
@@ -698,9 +701,7 @@ export function GameProvider({ children }) {
     callNumber
   ]);
 
-  // -------------------------------------------------------------
-  // REPLAY GAME
-  // -------------------------------------------------------------
+  // Replay the game.
   const replayGame = useCallback((cb) => {
     if (roomData?.isBot) {
       setGameOver(null);
@@ -757,9 +758,7 @@ export function GameProvider({ children }) {
     });
   }, [roomData, playerId, syncBotSession, navigate, socket]);
 
-  // -------------------------------------------------------------
-  // LEAVE ROOM
-  // -------------------------------------------------------------
+  // Leave the room.
   const requestLeaveRoom = useCallback(() => {
     setShowLeaveModal(true);
   }, []);
@@ -800,7 +799,7 @@ export function GameProvider({ children }) {
 
   const transferCreator = useCallback((targetId, cb) => {
     if (!socket || roomData?.isBot) {
-      if (cb) cb({ success: false, error: 'Cannot transfer privileges in a bot game.' });
+      if (cb) cb({ success: false, error: 'The host cannot be changed in a bot game.' });
       return;
     }
     socket.emit('room:transferCreator', { targetId }, (res) => {
@@ -808,9 +807,7 @@ export function GameProvider({ children }) {
     });
   }, [socket, roomData?.isBot]);
 
-  // -------------------------------------------------------------
-  // INACTIVITY MONITORING (Multiplayer + Bot)
-  // -------------------------------------------------------------
+  // Inactivity monitoring (multiplayer and bot).
   const keepRoomAlive = useCallback(() => {
     if (roomData?.isBot) {
       clearTimeout(botInactivityWarningTimerRef.current);
@@ -871,7 +868,7 @@ export function GameProvider({ children }) {
           botInactivityWarningTimerRef.current = setTimeout(() => {
             setInactivityWarning(null);
             leaveRoom();
-            showNotif('Match was closed due to inactivity.', 'warning', 5000);
+            showNotif('The match was closed after a long pause.', 'warning', 5000);
           }, 10000);
         }
       }, 4000);

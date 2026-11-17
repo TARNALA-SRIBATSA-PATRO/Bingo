@@ -1,148 +1,113 @@
+/* Legal modal. Uses its own overlay class (opened from the footer, above other modals). */
 .legal-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.78);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1100;
   padding: 16px;
-  animation: legalFadeIn 0.25s ease-out;
-}
-
-@keyframes legalFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  padding-top: calc(16px + var(--safe-top));
+  padding-bottom: calc(16px + var(--safe-bottom));
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  animation: fade-in var(--t) var(--ease);
 }
 
 .legal-modal-card {
   width: 100%;
   max-width: 740px;
-  max-height: 88vh;
-  background: rgba(18, 20, 32, 0.98);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  box-shadow: 
-    0 24px 60px rgba(0, 0, 0, 0.8),
-    0 0 20px rgba(94, 106, 210, 0.15);
+  max-height: calc(88vh / var(--zoom, 1));
+  max-height: calc(88dvh / var(--zoom, 1));
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: legalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes legalScaleUp {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+  animation: rise-in var(--t) var(--ease);
 }
 
 .legal-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
 .legal-modal-title-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .legal-modal-icon {
-  color: #fbbf24;
+  flex-shrink: 0;
+  color: var(--brass);
 }
 
 .legal-modal-header h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #ffffff;
   margin: 0;
+  font-size: 1.2rem;
 }
 
 .legal-modal-close-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink-2);
   font-size: 0.95rem;
-  transition: all 0.15s ease;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
 
 .legal-modal-close-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.4);
+  background: var(--bad-soft);
+  border-color: var(--bad);
+  color: var(--bad);
 }
 
 .legal-modal-body {
-  padding: 24px;
-  overflow-y: auto;
   flex: 1;
-  max-height: calc(88vh - 140px);
-}
-
-.legal-modal-body::-webkit-scrollbar {
-  width: 6px;
-}
-.legal-modal-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-}
-.legal-modal-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(94, 106, 210, 0.6);
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
 }
 
 .legal-modal-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 14px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
 }
 
 .legal-close-action-btn {
-  min-width: 100px;
-  padding: 8px 18px;
-  font-size: 0.9rem;
+  min-width: 110px;
 }
 
 @media (max-width: 600px) {
   .legal-modal-card {
-    max-height: 92vh;
-    border-radius: 16px;
+    max-height: calc(92vh / var(--zoom, 1));
+    max-height: calc(92dvh / var(--zoom, 1));
   }
   .legal-modal-header {
-    padding: 14px 18px;
+    padding: 12px 16px;
   }
   .legal-modal-body {
     padding: 16px;
-    max-height: calc(92vh - 120px);
   }
   .legal-modal-footer {
-    padding: 12px 18px;
+    padding: 10px 16px;
   }
 }

@@ -6,6 +6,7 @@ import {
   isNamePromptDeclined, 
   setNamePromptDeclined 
 } from '../utils/storageUtils';
+import { useLocation } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import './PwaNamePromptModal.css';
 
@@ -15,6 +16,9 @@ export default function PwaNamePromptModal() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { setPlayerName, showNotif } = useGame() || {};
+  const { pathname } = useLocation();
+  // Only ask on the home page or in the lobby; never interrupt setup or a round.
+  const onQuietPage = pathname === '/' || pathname === '/lobby';
 
   useEffect(() => {
     let isMounted = true;
@@ -73,7 +77,7 @@ export default function PwaNamePromptModal() {
     try {
       await setPersistentPlayerName(clean);
       if (setPlayerName) setPlayerName(clean);
-      if (showNotif) showNotif(`Welcome, ${clean}! Name saved.`, 'success', 3500);
+      if (showNotif) showNotif(`Name saved as ${clean}.`, 'success', 3500);
       setIsOpen(false);
     } catch (err) {
       console.error('Error saving name:', err);
@@ -92,7 +96,7 @@ export default function PwaNamePromptModal() {
     setIsOpen(false);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !onQuietPage) return null;
 
   return (
     <div 
@@ -107,7 +111,10 @@ export default function PwaNamePromptModal() {
           onClick={handleDecline}
           aria-label="Decline and close"
         >
-          ✕
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
         </button>
 
         <div className="pwa-name-icon-wrap">
@@ -120,10 +127,10 @@ export default function PwaNamePromptModal() {
         </div>
 
         <h3 id="pwa-name-title" className="pwa-name-title">
-          Welcome to Bingo!
+          Set your name
         </h3>
         <p className="pwa-name-subtitle">
-          Set your player name once, and we'll automatically fill it whenever you host or join a room.
+          It will be filled in whenever you make or join a room.
         </p>
 
         <form onSubmit={handleSave} className="pwa-name-form">
@@ -131,7 +138,7 @@ export default function PwaNamePromptModal() {
             <input 
               type="text" 
               className="pwa-name-input"
-              placeholder="e.g. Alex"
+              placeholder="Your name"
               value={nameInput}
               onChange={(e) => {
                 setNameInput(e.target.value);
@@ -150,7 +157,7 @@ export default function PwaNamePromptModal() {
               className="btn btn-primary pwa-name-save-btn"
               disabled={submitting}
             >
-              {submitting ? 'Saving...' : 'Save Name'}
+              {submitting ? 'Saving' : 'Save name'}
             </button>
             <button 
               type="button" 

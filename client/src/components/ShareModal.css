@@ -1,57 +1,58 @@
+/* Share modal: panel-specific rules on top of the shared .modal-overlay / .modal-content. */
 .share-modal {
   max-width: 440px;
-  width: 92%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  color: var(--text-primary);
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .share-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .share-modal-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--accent-light, #818cf8);
+  color: var(--brass);
 }
 
 .share-modal-title h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 1.2rem;
+  color: var(--ink);
 }
 
 .share-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-3);
   cursor: pointer;
-  line-height: 1;
-  padding: 0 4px;
-  transition: color 0.2s;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 
 .share-close-btn:hover {
-  color: var(--text-primary);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .share-modal-subtitle {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
+  color: var(--ink-2);
+  line-height: 1.5;
 }
 
 .share-item-card {
@@ -59,9 +60,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 12px 14px;
 }
 
@@ -75,60 +76,54 @@
 
 .share-item-label {
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-weight: 600;
 }
 
 .share-code-value {
   font-size: 1.3rem;
-  font-weight: 900;
-  color: var(--accent);
-  letter-spacing: 0.15em;
-  font-family: monospace;
+  font-weight: 700;
+  color: var(--brass);
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
 }
 
 .share-link-input {
   width: 100%;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 8px;
+  min-height: 36px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
   font-size: 0.85rem;
-  color: var(--text-secondary);
-  font-family: monospace;
+  font-family: var(--font);
+  color: var(--ink-2);
   outline: none;
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 
 .share-link-input:focus {
-  border-color: var(--accent);
-  color: var(--text-primary);
+  border-color: var(--brass);
+  color: var(--ink);
 }
 
 .share-modal-actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .btn-whatsapp {
-  background: #25d366;
-  color: #fff;
-  border: none;
-  font-weight: 600;
-  text-align: center;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: rgba(95, 197, 133, 0.4);
   text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 16px;
-  border-radius: 10px;
-  transition: opacity 0.2s;
 }
 
 .btn-whatsapp:hover {
-  opacity: 0.9;
-  color: #fff;
+  background: rgba(95, 197, 133, 0.22);
+  color: var(--ok);
 }

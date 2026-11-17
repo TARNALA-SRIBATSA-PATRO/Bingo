@@ -1,9 +1,10 @@
-const CACHE_NAME = 'bingo-pwa-v2.5.7';
+const CACHE_NAME = 'bingo-pwa-v2.6.0';
 
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/admin-manifest.json',
   '/version.json',
   '/favicon.svg',
   '/icons/icon-192.png',
