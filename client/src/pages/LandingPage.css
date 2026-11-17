@@ -217,12 +217,16 @@
   .landing-h1 { max-width: 18ch; }
   .landing-buttons { justify-content: center; }
   .hero-card { transform: none; justify-self: center; }
+  .landing-lead { max-width: 36ch; }
   .landing-steps ol { grid-template-columns: 1fr; }
   .landing-faq { max-width: none; }
 }
 
 @media (max-width: 480px) {
   .landing-page { padding-top: calc(72px + var(--safe-top)); }
+  /* The card illustration is decoration; on a phone it only pushes the steps off screen. */
+  .hero-card { display: none; }
+  .hero { gap: 0; }
   .landing-content { gap: 36px; }
   .landing-h1 { font-size: 1.85rem; }
   .landing-buttons { width: 100%; }

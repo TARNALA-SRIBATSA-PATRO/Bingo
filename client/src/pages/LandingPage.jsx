@@ -40,8 +40,8 @@ export default function LandingPage() {
             </div>
             <h1 className="landing-h1">Bingo with friends, in the browser</h1>
             <p className="landing-lead">
-              Fill a 5×5 card with 1 to 25, take turns calling numbers, and race to five lines.
-              Up to four players, or the bot when nobody is around. No sign-up.
+              Fill a 5×5 card, take turns calling numbers, first to five lines wins.
+              Up to four players, or the bot. No sign-up.
             </p>
             <div className="landing-buttons">
               <button className="btn btn-primary btn-large" onClick={() => navigate('/lobby')}>
