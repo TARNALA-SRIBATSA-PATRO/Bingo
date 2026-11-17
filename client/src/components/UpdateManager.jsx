@@ -39,6 +39,13 @@ export default function UpdateManager() {
   // Execute the update: purge caches, signal Service Worker skipWaiting, and reload cleanly
   const executeApplyUpdate = useCallback(async (versionToApply) => {
     if (isApplyingUpdateRef.current) return;
+    // If we already reloaded for this exact version a moment ago and are still here, the server and
+    // the bundle disagree about the version. Reloading again would loop forever, so stop.
+    try {
+      const last = JSON.parse(sessionStorage.getItem('bingo_last_update_attempt') || 'null');
+      if (last && last.version === versionToApply && Date.now() - last.at < 60000) return;
+      sessionStorage.setItem('bingo_last_update_attempt', JSON.stringify({ version: versionToApply, at: Date.now() }));
+    } catch {}
     isApplyingUpdateRef.current = true;
     setUpdatingVersion(versionToApply || CURRENT_APP_VERSION);
 
@@ -71,10 +78,10 @@ export default function UpdateManager() {
       }
     }
 
-    // 3. Force reload page to fetch fresh bundles
+    // 3. Reload to pick up the new bundle. Reload now; the service worker activates on its own.
     setTimeout(() => {
-      window.location.reload(true);
-    }, 800);
+      window.location.reload();
+    }, 300);
   }, []);
 
   // When user enters Lobby or Home, check if an update was postponed during gameplay

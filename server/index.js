@@ -76,7 +76,19 @@ for (const envCandidate of [
   }
 }
 
-const CURRENT_VERSION = '2.5.7';
+// The version the clients compare against must be the version of the bundle we serve, so read it from
+// the built client (client/public/version.json is copied into dist by the build). Fall back to package.json.
+function readServedVersion() {
+  try {
+    const built = JSON.parse(fs.readFileSync(path.join(__dirname, '../client/dist/version.json'), 'utf8'));
+    if (built && typeof built.version === 'string') return built.version;
+  } catch {}
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
+  } catch {}
+  return '0.0.0';
+}
+const CURRENT_VERSION = readServedVersion();
 const VERSION_PAYLOAD = JSON.stringify({
   version: CURRENT_VERSION,
   buildTime: Date.now()
@@ -122,6 +134,7 @@ app.use(express.static(path.join(__dirname, '../client/dist'), {
     if (
       filePath.endsWith('sw.js') ||
       filePath.endsWith('version.json') ||
+      filePath.endsWith('manifest.json') ||
       filePath.endsWith('index.html')
     ) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
