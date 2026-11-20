@@ -368,7 +368,6 @@ export default function GamePage() {
                       onClick={() => handleCellClick(val)}
                     >
                       {val}
-                      {isMarked && <CheckIcon size={10} className="cell-mark" />}
                     </button>
                   );
                 })

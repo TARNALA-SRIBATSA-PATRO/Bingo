@@ -107,7 +107,6 @@
   border-color: var(--caller);
   color: var(--caller);
 }
-.hero-check { position: absolute; right: 3px; bottom: 3px; color: var(--caller); }
 .hero-line {
   position: absolute;
   left: -8px;

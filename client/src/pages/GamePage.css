@@ -210,12 +210,6 @@
   60% { transform: scale(0.96) rotate(1deg); }
   100% { transform: none; filter: none; }
 }
-.game-cell .cell-mark {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  color: var(--caller, var(--ink-2));
-}
 .game-board.waiting .game-cell:not(.marked) { color: var(--ink-2); }
 
 .board-lines {

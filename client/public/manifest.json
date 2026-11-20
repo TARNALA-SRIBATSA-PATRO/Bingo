@@ -1,7 +1,7 @@
 {
   "name": "Bingo",
   "short_name": "Bingo",
-  "version": "2.6.6",
+  "version": "2.6.7",
   "description": "Play 5x5 bingo with up to four friends in the browser. Make a room, share the code, take turns calling numbers. Free, no ads, no account.",
   "start_url": "/",
   "scope": "/",

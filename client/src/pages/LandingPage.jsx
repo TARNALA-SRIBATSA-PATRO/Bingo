@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import SoundToggle from '../components/SoundToggle';
-import { PlayIcon, BookIcon, CheckIcon } from '../components/Icons';
+import { PlayIcon, BookIcon } from '../components/Icons';
 import './LandingPage.css';
 
 const FAQ = [
@@ -65,7 +65,6 @@ export default function LandingPage() {
               {HERO_CARD.flat().map((n) => (
                 <span key={n} className={`hero-cell ${MARKS[n] ? 'marked' : ''}`} style={MARKS[n] ? { '--caller': MARKS[n] } : undefined}>
                   {n}
-                  {MARKS[n] && <CheckIcon size={9} className="hero-check" />}
                 </span>
               ))}
               <span className="hero-line" />
