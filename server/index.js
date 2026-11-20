@@ -37,8 +37,16 @@ import {
   saveRoomsSnapshot,
   loadRoomsSnapshot,
   flushStoreNow,
-  storeReady
+  storeReady,
+  saveAdminEvents,
+  loadAdminEvents,
+  incrementFunnel,
+  getFunnelReport,
+  appendRoundStat,
+  getBalanceReport,
+  getStoreHealth
 } from './analyticsStore.js';
+import { logEvent, getEvents, restoreEvents, setEventPersistence, eventsBuffered } from './adminEvents.js';
 import {
   handleAdminLogin,
   handleAdminLogout,
@@ -225,8 +233,31 @@ const TURN_SKIP_MS = 20 * 1000;             // an away player's turn passes afte
 const SNAPSHOT_MAX_AGE_MS = 30 * 60 * 1000; // restored on boot only if saved within this
 const SNAPSHOT_DEBOUNCE_MS = 1000;
 
-function rejected(event, room, reason) {
+const STARTED_AT = Date.now();
+let lastSnapshotAt = null;
+
+// Event loop lag: how late a 1 s tick arrives, kept for the admin health endpoint.
+let eventLoopLagMs = 0;
+{
+  let expectedTick = Date.now() + 1000;
+  const lagTimer = setInterval(() => {
+    const now = Date.now();
+    eventLoopLagMs = Math.max(0, now - expectedTick);
+    expectedTick = now + 1000;
+  }, 1000);
+  lagTimer.unref();
+}
+
+function rejected(event, room, reason, log = true) {
   console.warn(`[room] ${event} rejected in ${room ? room.id + ' (' + room.status + ')' : 'no room'}: ${reason}`);
+  if (log) {
+    logEvent('warn', 'state-rejected', `${event} rejected${room ? ' in ' + room.id : ''}: ${reason}`, {
+      roomId: room ? room.id : undefined,
+      status: room ? room.status : undefined,
+      event,
+      reason
+    });
+  }
   return { success: false, error: reason };
 }
 
@@ -261,6 +292,7 @@ function serializeRoom(room) {
     version: room.version || 0,
     creatorId: room.creatorId,
     status: room.status,
+    createdAt: room.createdAt || null,
     players,
     turnOrder: room.turnOrder || [],
     currentTurnIndex: room.currentTurnIndex || 0,
@@ -282,6 +314,7 @@ function writeSnapshot() {
     const snapshot = {};
     for (const [id, room] of Object.entries(rooms)) snapshot[id] = serializeRoom(room);
     saveRoomsSnapshot(snapshot);
+    lastSnapshotAt = Date.now();
   } catch (err) {
     console.warn('[room] Snapshot skipped:', err.message);
   }
@@ -322,6 +355,7 @@ function restoreRooms(snapshot) {
         currentGameIndex: saved.currentGameIndex || 1,
         roundPlayerCount: saved.roundPlayerCount || 0,
         matchStartTime: saved.matchStartTime || null,
+        createdAt: saved.createdAt || now,
         lastActivity: now,
         deletionTimer: null,
         turnTimer: null,
@@ -358,13 +392,25 @@ function restoreRooms(snapshot) {
       console.warn('[room] Could not restore a room from the snapshot:', err.message);
     }
   }
-  if (restored) console.log(`[room] Restored ${restored} room(s) from the last snapshot.`);
+  if (restored) {
+    console.log(`[room] Restored ${restored} room(s) from the last snapshot.`);
+    logEvent('info', 'snapshot-restored', `Restored ${restored} room(s) from the last snapshot`, { rooms: restored });
+  }
 }
 
 // Rooms are usable once the store has loaded, so a client that reconnects during a restart does
 // not hear that its room is gone a moment before the room is restored.
 const roomsReady = storeReady
-  .then(() => restoreRooms(loadRoomsSnapshot()))
+  .then(() => {
+    // The saved admin event log comes back first, so this boot's events follow the older ones.
+    try {
+      restoreEvents(loadAdminEvents());
+      setEventPersistence(saveAdminEvents);
+    } catch (err) {
+      console.warn('[admin] Event log restore failed:', err.message);
+    }
+    restoreRooms(loadRoomsSnapshot());
+  })
   .catch(err => console.warn('[room] Snapshot restore failed:', err.message));
 
 function flushRoomsNow() {
@@ -414,9 +460,16 @@ function currentTurnPlayer(room) {
 }
 
 // Clean up room and cancel all associated timers to prevent memory leaks
-function cleanupRoom(roomId) {
+function cleanupRoom(roomId, reason = 'empty') {
   const room = rooms[roomId];
   if (!room) return;
+  logEvent('info', 'room-closed', `Room ${roomId} closed (${reason})`, {
+    roomId,
+    reason,
+    status: room.status,
+    round: room.currentGameIndex || 1,
+    playerCount: Object.keys(room.players || {}).length
+  });
 
   if (room.deletionTimer) clearTimeout(room.deletionTimer);
   if (room.turnTimer) clearTimeout(room.turnTimer);
@@ -627,7 +680,14 @@ function armSeatTimer(room, player) {
     if (!current) return;
     const p = current.players[player.id];
     if (!p || p.connected !== false) return;
-    removeSeat(current, p.id);
+    const awayMs = Date.now() - (p.awaySince || Date.now());
+    logEvent('info', 'seat-released', `${p.name}'s seat in ${current.id} was released after ${Math.round(awayMs / 1000)} s away`, {
+      roomId: current.id,
+      playerName: p.name,
+      awayMs,
+      status: current.status
+    });
+    removeSeat(current, p.id, 'timeout');
   }, delay);
 }
 
@@ -652,6 +712,11 @@ function armTurnTimer(room) {
     if (!p || p.connected !== false) return;
     cur.currentTurnIndex = (cur.currentTurnIndex + 1) % cur.turnOrder.length;
     cur.turnSkippedFor = { id: p.id, name: p.name };
+    logEvent('info', 'turn-skipped', `${p.name}'s turn in ${cur.id} was skipped (away)`, {
+      roomId: cur.id,
+      playerName: p.name,
+      round: cur.currentGameIndex
+    });
     markChanged(cur);
     armTurnTimer(cur);
     broadcastRoom(cur);
@@ -671,7 +736,42 @@ function finishRound(room, winners, draw) {
   if (room.gameHistory.length > 20) room.gameHistory.shift();
 
   const durationMs = room.matchStartTime ? (Date.now() - room.matchStartTime) : null;
-  recordMultiplayerGameCompleted({ durationMs, playerCount: room.roundPlayerCount || Object.keys(room.players).length });
+  const playerCount = room.roundPlayerCount || Object.keys(room.players).length;
+  recordMultiplayerGameCompleted({ durationMs, playerCount });
+
+  // Admin: round statistics, funnel step and event. Best-effort; none of it can stop the round ending.
+  try {
+    const calls = (room.calledNumbers || []).length;
+    const winnerIds = new Set(winners.map(w => w.id));
+    const winnerNames = winners.map(w => w.name);
+    const loserLines = Object.values(room.players)
+      .filter(p => !winnerIds.has(p.id) && Array.isArray(p.board) && p.board.length === 5)
+      .map(p => (p.bingoLines ? p.bingoLines.size : 0));
+    appendRoundStat({
+      at: Date.now(),
+      roomId: room.id,
+      round: room.currentGameIndex,
+      playerCount,
+      calls,
+      durationMs,
+      draw: Boolean(draw),
+      winnerName: draw ? null : (winnerNames[0] || null),
+      loserMaxLines: loserLines.length ? Math.max(...loserLines) : null,
+      avgTurnMs: calls && typeof durationMs === 'number' ? Math.round(durationMs / calls) : null
+    });
+    incrementFunnel('roundsFinished');
+    logEvent('info', 'round-finished', `Round ${room.currentGameIndex} in ${room.id}: ${draw ? 'draw between ' + winnerNames.join(', ') : winnerNames.join(', ') + ' won'} after ${calls} calls`, {
+      roomId: room.id,
+      round: room.currentGameIndex,
+      calls,
+      durationMs,
+      draw: Boolean(draw),
+      winners: winnerNames,
+      playerCount
+    });
+  } catch (err) {
+    console.warn('[admin] Round stats skipped:', err.message);
+  }
 
   armTurnTimer(room);
   // The round held every seat; from here on an away seat is held for the between-round time,
@@ -727,7 +827,7 @@ function startRoomDeletionCountdown(room, isSolo, totalPlayers) {
       roomId,
       message: 'Room was closed due to inactivity.'
     });
-    cleanupRoom(roomId);
+    cleanupRoom(roomId, 'inactivity');
   }, 10000); // 10 seconds countdown
 }
 
@@ -760,12 +860,18 @@ setInterval(() => {
 
 // Take a seat out of the room (explicit leave or a timer) and settle what follows: creator handover,
 // a round that is left with one player, an empty room. Returns false if the room is gone.
-function removeSeat(room, playerId) {
+function removeSeat(room, playerId, reason = 'left') {
   const player = room.players[playerId];
   if (!player) return Boolean(rooms[room.id]);
   if (player.seatTimer) clearTimeout(player.seatTimer);
   player.seatTimer = null;
 
+  logEvent('info', 'room-left', `${player.name} left ${room.id} (${reason})`, {
+    roomId: room.id,
+    playerName: player.name,
+    reason,
+    status: room.status
+  });
   rememberLeftPlayer(room, player);
   delete room.players[playerId];
   removeFromTurnOrder(room, playerId);
@@ -843,11 +949,11 @@ function leaveRoom(socket) {
   if (room.creatorId === playerId && Object.keys(room.players).length > 1) {
     // The others are told; the leaver already knows.
     socket.to(roomId).emit('room:destroyed', { roomId, message: 'The host closed the room.' });
-    cleanupRoom(roomId);
+    cleanupRoom(roomId, 'creator-left');
     return;
   }
 
-  removeSeat(room, playerId);
+  removeSeat(room, playerId, 'left');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -907,6 +1013,7 @@ io.on('connection', (socket) => {
       currentGameIndex: 1,
       roundPlayerCount: 0,
       matchStartTime: null,
+      createdAt: Date.now(),
       lastActivity: Date.now(),
       deletionTimer: null,
       turnTimer: null,
@@ -920,6 +1027,8 @@ io.on('connection', (socket) => {
     cb(seatReply(room, player));
     broadcastRoom(room);
     recordMultiplayerRoomCreated();
+    incrementFunnel('roomsCreated');
+    logEvent('info', 'room-created', `${name} created room ${roomId}`, { roomId, playerName: name });
   });
 
   // Join room
@@ -939,13 +1048,15 @@ io.on('connection', (socket) => {
       }
       // Between rounds an abandoned seat with this name goes, and the newcomer takes a fresh one
       // with those wins.
-      removeSeat(room, seated.id);
+      removeSeat(room, seated.id, 'kicked');
       if (!rooms[roomId]) return cb(rejected('room:join', null, 'Room not found'));
     }
 
     const left = Object.values(room.leftPlayers || {}).find(p => p.name.toLowerCase() === lower);
     if (left) {
       if (socket.data.roomId !== roomId) leaveRoom(socket);
+      incrementFunnel('roomsJoined');
+      logEvent('info', 'room-joined', `${name} joined ${roomId} again`, { roomId, playerName: name, returning: true });
       return seatReturningPlayer(socket, room, { player: left, wasLeft: true, fresh: true }, cb);
     }
 
@@ -965,6 +1076,8 @@ io.on('connection', (socket) => {
     attachSocket(socket, room, player);
     markChanged(room);
     touchRoomActivity(room);
+    incrementFunnel('roomsJoined');
+    logEvent('info', 'room-joined', `${name} joined ${roomId}`, { roomId, playerName: name, playerCount: Object.keys(room.players).length });
 
     cb(seatReply(room, player));
     broadcastRoom(room);
@@ -975,17 +1088,32 @@ io.on('connection', (socket) => {
   on('room:rejoin', ({ roomId, playerId, token }, cb) => {
     roomId = String(roomId || '').trim().toUpperCase();
     const room = rooms[roomId];
-    if (!room) return cb(rejected('room:rejoin', null, 'Room not found'));
-    if (!playerId || !token) return cb(rejected('room:rejoin', room, 'Player not found in room'));
+    if (!room) {
+      logEvent('warn', 'rejoin-failed', `Rejoin to ${roomId || '?'} failed: room not found`, { roomId: roomId || undefined, reason: 'room-not-found' });
+      return cb(rejected('room:rejoin', null, 'Room not found', false));
+    }
+    if (!playerId || !token) {
+      logEvent('warn', 'rejoin-failed', `Rejoin to ${roomId} failed: missing credentials`, { roomId, reason: 'missing-credentials' });
+      return cb(rejected('room:rejoin', room, 'Player not found in room', false));
+    }
 
     let seat = null;
     const player = room.players[playerId];
     if (player && player.token === token) seat = { player, wasLeft: false };
     const left = room.leftPlayers?.[playerId];
     if (!seat && left && left.token === token) seat = { player: left, wasLeft: true };
-    if (!seat) return cb(rejected('room:rejoin', room, 'Player not found in room'));
+    if (!seat) {
+      logEvent('warn', 'rejoin-failed', `Rejoin to ${roomId} failed: seat not found or token mismatch`, { roomId, reason: 'seat-not-found' });
+      return cb(rejected('room:rejoin', room, 'Player not found in room', false));
+    }
 
     if (socket.data.roomId && socket.data.roomId !== roomId) leaveRoom(socket);
+    logEvent('info', 'rejoin-ok', `${seat.player.name} rejoined ${roomId}${seat.wasLeft ? ' (seat restored)' : ''}`, {
+      roomId,
+      playerName: seat.player.name,
+      wasLeft: seat.wasLeft,
+      status: room.status
+    });
     seatReturningPlayer(socket, room, seat, cb);
   });
 
@@ -1010,6 +1138,7 @@ io.on('connection', (socket) => {
     player.ready = true;
     player.markedCells = new Set();
     player.bingoLines = new Set();
+    incrementFunnel('cardsSubmitted');
 
     markChanged(room);
     cb({ success: true });
@@ -1057,6 +1186,13 @@ io.on('connection', (socket) => {
     room.calledHistory = [];
     room.matchStartTime = Date.now();
     room.roundPlayerCount = playerIds.length;
+    incrementFunnel('roundsStarted');
+    logEvent('info', 'round-started', `Round ${room.currentGameIndex} in ${room.id} started with ${ready.map(p => p.name).join(', ')}`, {
+      roomId: room.id,
+      round: room.currentGameIndex,
+      players: ready.map(p => p.name),
+      playerCount: playerIds.length
+    });
 
     markChanged(room);
     armTurnTimer(room);
@@ -1142,6 +1278,7 @@ io.on('connection', (socket) => {
 
     touchRoomActivity(room);
     room.currentGameIndex++;
+    incrementFunnel('replays');
     room.status = 'filling';
     room.calledNumbers = [];
     room.calledHistory = [];
@@ -1212,7 +1349,7 @@ io.on('connection', (socket) => {
       roomId: room.id,
       message: 'The host closed the room.'
     });
-    cleanupRoom(room.id);
+    cleanupRoom(room.id, 'creator-left');
     cb({ success: true });
   });
 
@@ -1229,6 +1366,11 @@ io.on('connection', (socket) => {
     player.awaySince = Date.now();
     armSeatTimer(room, player);
     armTurnTimer(room);
+    logEvent('info', 'player-away', `${player.name} dropped out of ${room.id}`, {
+      roomId: room.id,
+      playerName: player.name,
+      status: room.status
+    });
 
     markChanged(room);
     broadcastRoom(room);
@@ -1270,6 +1412,8 @@ app.post('/api/analytics/event', (req, res) => {
   const { userId, event } = req.body || {};
   if (event === 'installed') {
     recordInstall({ userId });
+  } else if (event === 'lobby_open') {
+    incrementFunnel('lobbyOpens');
   }
   res.json({ success: true });
 });
@@ -1441,6 +1585,119 @@ app.post('/api/admin/backup/restore', requireAdminAuth, (req, res) => {
   res.json({ success: restored, stats: getAdminDashboardStats() });
 });
 
+// ---------------------------------------------------------------------------------------------
+// Admin: event log, live rooms, health, funnel and game balance. These views never include a
+// player's token or card.
+// ---------------------------------------------------------------------------------------------
+const ROOM_CODE_RE = /^[A-Za-z0-9]{4,8}$/;
+
+function adminRoomFromParams(req, res) {
+  const id = String(req.params.id || '').trim().toUpperCase();
+  if (!ROOM_CODE_RE.test(id)) {
+    res.status(400).json({ success: false, error: 'Room code must be 4-8 letters or digits.' });
+    return null;
+  }
+  const room = rooms[id];
+  if (!room) {
+    res.status(404).json({ success: false, error: 'Room not found' });
+    return null;
+  }
+  return room;
+}
+
+function adminRoomView(room) {
+  const turn = room.status === 'playing' ? currentTurnPlayer(room) : null;
+  const creator = room.players[room.creatorId];
+  const players = Object.values(room.players).map(p => ({
+    name: p.name,
+    connected: p.connected !== false,
+    ready: Boolean(p.ready),
+    lines: p.bingoLines ? p.bingoLines.size : 0,
+    wins: p.wins || 0,
+    isCreator: p.id === room.creatorId,
+    isTurn: Boolean(turn && turn.id === p.id),
+    awaySince: p.connected === false ? (p.awaySince || null) : null
+  }));
+  return {
+    id: room.id,
+    status: room.status,
+    round: room.currentGameIndex || 1,
+    version: room.version || 0,
+    createdAt: room.createdAt || null,
+    lastActivityAt: room.lastActivity || null,
+    calledCount: (room.calledNumbers || []).length,
+    playerCount: players.length,
+    creatorName: creator ? creator.name : null,
+    players
+  };
+}
+
+app.get('/api/admin/events', requireAdminAuth, (req, res) => {
+  const { limit, q, level } = req.query;
+  res.json({ events: getEvents({ limit, q, level }) });
+});
+
+app.get('/api/admin/rooms', requireAdminAuth, (req, res) => {
+  const list = Object.values(rooms)
+    .map(adminRoomView)
+    .sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+  res.json({ rooms: list });
+});
+
+app.post('/api/admin/rooms/:id/close', requireAdminAuth, (req, res) => {
+  const room = adminRoomFromParams(req, res);
+  if (!room) return;
+  io.to(room.id).emit('room:destroyed', { roomId: room.id, message: 'The room was closed by the admin.' });
+  cleanupRoom(room.id, 'admin');
+  res.json({ success: true });
+});
+
+app.post('/api/admin/rooms/:id/message', requireAdminAuth, (req, res) => {
+  const room = adminRoomFromParams(req, res);
+  if (!room) return;
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) return res.status(400).json({ success: false, error: 'Message text is required.' });
+  if (text.length > 160) return res.status(400).json({ success: false, error: 'Message must be 160 characters or fewer.' });
+  io.to(room.id).emit('room:notice', { roomId: room.id, text });
+  logEvent('info', 'admin-message', `Admin message to ${room.id}: ${text}`, { roomId: room.id, text });
+  res.json({ success: true });
+});
+
+app.get('/api/admin/health', requireAdminAuth, (req, res) => {
+  const mem = process.memoryUsage();
+  const list = Object.values(rooms);
+  res.json({
+    version: CURRENT_VERSION,
+    startedAt: STARTED_AT,
+    uptimeSec: Math.round(process.uptime()),
+    node: process.version,
+    memory: {
+      rssMb: Math.round((mem.rss / 1048576) * 10) / 10,
+      heapUsedMb: Math.round((mem.heapUsed / 1048576) * 10) / 10
+    },
+    sockets: io.engine ? io.engine.clientsCount : 0,
+    rooms: list.length,
+    roomsPlaying: list.filter(r => r.status === 'playing').length,
+    eventLoopLagMs,
+    db: getStoreHealth(),
+    lastSnapshotAt,
+    eventsBuffered: eventsBuffered()
+  });
+});
+
+app.get('/api/admin/funnel', requireAdminAuth, (req, res) => {
+  res.json(getFunnelReport({ days: req.query.days }));
+});
+
+app.get('/api/admin/balance', requireAdminAuth, (req, res) => {
+  res.json(getBalanceReport({ days: req.query.days }));
+});
+
+// Any /api path no route handled answers JSON, not the SPA shell.
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, error: 'Not found' });
+});
+
 app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -1451,13 +1708,26 @@ app.get('*', (req, res) => {
 // Process-level crash safety nets
 process.on('uncaughtException', (err) => {
   console.error('[CRITICAL] Uncaught exception:', err);
+  logEvent('error', 'uncaught-error', `Uncaught exception: ${err && err.message ? err.message : String(err)}`, {
+    kind: 'uncaughtException',
+    stack: err && err.stack ? String(err.stack).split('\n').slice(0, 4).join('\n') : undefined
+  });
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[CRITICAL] Unhandled promise rejection:', reason);
+  logEvent('error', 'uncaught-error', `Unhandled rejection: ${reason && reason.message ? reason.message : String(reason)}`, {
+    kind: 'unhandledRejection',
+    stack: reason && reason.stack ? String(reason.stack).split('\n').slice(0, 4).join('\n') : undefined
+  });
 });
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 httpServer.listen(PORT, HOST, () => {
   console.log(`Bingo server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  logEvent('info', 'server-started', `Server v${CURRENT_VERSION} started on port ${PORT}`, {
+    version: CURRENT_VERSION,
+    port: Number(PORT),
+    node: process.version
+  });
 });

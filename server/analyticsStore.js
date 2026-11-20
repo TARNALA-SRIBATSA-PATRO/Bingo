@@ -25,6 +25,7 @@ import {
   evaluateScheduledDispatch,
   nextAllowedSendTime
 } from './aiNotificationEngine.js';
+import { logEvent } from './adminEvents.js';
 export { generateSmartNotificationCampaign, getContextualMatrix, formatTimeIST, formatDateIST };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -81,13 +82,21 @@ const defaultState = {
     passwordHash: null,
     passwordSalt: null,
     vapidKeys: DEFAULT_VAPID_KEYS
-  }
+  },
+  adminEvents: [], // last 200 admin log events (see adminEvents.js)
+  funnelDaily: {}, // { 'YYYY-MM-DD' (IST): { roomsCreated, roomsJoined, cardsSubmitted, roundsStarted, roundsFinished, replays, botGamesStarted, lobbyOpens } }
+  roundStats: [] // last 500 multiplayer rounds: { at, roomId, round, playerCount, calls, durationMs, draw, winnerName, loserMaxLines, avgTurnMs }
 };
 
 let memoryStore = { ...defaultState };
 let isDirty = false;
 let flushTimer = null;
 const dirtyDbKeys = new Set();
+
+// Health of persistence, read by the admin health endpoint
+let lastFlushAt = null;
+let lastFlushOk = null;
+let diskWritable = true;
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -114,7 +123,10 @@ async function loadStore() {
         scheduledNotifications: Array.isArray(parsed.scheduledNotifications) ? parsed.scheduledNotifications : [],
         aiAutoPilot: { ...defaultState.aiAutoPilot, ...(parsed.aiAutoPilot || {}) },
         schedulingNotices: Array.isArray(parsed.schedulingNotices) ? parsed.schedulingNotices : [],
-        adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
+        adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) },
+        adminEvents: Array.isArray(parsed.adminEvents) ? parsed.adminEvents : [],
+        funnelDaily: parsed.funnelDaily && typeof parsed.funnelDaily === 'object' ? parsed.funnelDaily : {},
+        roundStats: Array.isArray(parsed.roundStats) ? parsed.roundStats : []
       };
       recomputeAggregatedBotStats();
       normalizeScheduledItemsOnLoad();
@@ -169,6 +181,9 @@ async function loadStore() {
         if (dbRows.ai_auto_pilot) memoryStore.aiAutoPilot = { ...defaultState.aiAutoPilot, ...dbRows.ai_auto_pilot };
         if (dbRows.scheduling_notices) memoryStore.schedulingNotices = Array.isArray(dbRows.scheduling_notices) ? dbRows.scheduling_notices : [];
         if (dbRows.rooms && typeof dbRows.rooms === 'object') memoryStore.rooms = dbRows.rooms;
+        if (Array.isArray(dbRows.admin_events)) memoryStore.adminEvents = dbRows.admin_events;
+        if (dbRows.funnel_daily && typeof dbRows.funnel_daily === 'object') memoryStore.funnelDaily = { ...memoryStore.funnelDaily, ...dbRows.funnel_daily };
+        if (Array.isArray(dbRows.round_stats)) memoryStore.roundStats = dbRows.round_stats;
         if (dbRows.admin_security && dbRows.admin_security.passwordHash) {
           memoryStore.adminSecurity = { ...defaultState.adminSecurity, ...dbRows.admin_security };
         }
@@ -207,7 +222,13 @@ function flushToDisk() {
     fs.writeFileSync(tmpFile, JSON.stringify(memoryStore, null, 2), 'utf8');
     fs.renameSync(tmpFile, DATA_FILE);
     isDirty = false;
+    diskWritable = true;
+    lastFlushAt = Date.now();
+    lastFlushOk = true;
   } catch (err) {
+    diskWritable = false;
+    lastFlushAt = Date.now();
+    lastFlushOk = false;
     console.error('[AnalyticsStore] Error flushing to disk:', err);
   }
 }
@@ -219,11 +240,16 @@ async function flushStore() {
     try {
       const keys = dirtyDbKeys.size > 0
         ? Array.from(dirtyDbKeys)
-        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'push_funnel', 'ai_auto_pilot', 'scheduling_notices', 'admin_security'];
+        : ['users', 'hourly_activity', 'daily_unique_users', 'bot_stats', 'multiplayer_stats', 'push_subscriptions', 'notifications_history', 'scheduled_notifications', 'push_funnel', 'ai_auto_pilot', 'scheduling_notices', 'admin_security', 'admin_events', 'funnel_daily', 'round_stats'];
       dirtyDbKeys.clear();
 
+      let allOk = true;
       for (const k of keys) {
-        if (k === 'users') await saveKeyToDatabase('users', memoryStore.users);
+        let ok = true;
+        if (k === 'admin_events') ok = await saveKeyToDatabase('admin_events', memoryStore.adminEvents || []);
+        else if (k === 'funnel_daily') ok = await saveKeyToDatabase('funnel_daily', memoryStore.funnelDaily || {});
+        else if (k === 'round_stats') ok = await saveKeyToDatabase('round_stats', memoryStore.roundStats || []);
+        else if (k === 'users') await saveKeyToDatabase('users', memoryStore.users);
         else if (k === 'hourly_activity') await saveKeyToDatabase('hourly_activity', memoryStore.hourlyActivity);
         else if (k === 'daily_unique_users') await saveKeyToDatabase('daily_unique_users', memoryStore.dailyUniqueUsers);
         else if (k === 'bot_stats') await saveKeyToDatabase('bot_stats', memoryStore.botStats);
@@ -236,8 +262,13 @@ async function flushStore() {
         else if (k === 'scheduling_notices') await saveKeyToDatabase('scheduling_notices', memoryStore.schedulingNotices);
         else if (k === 'admin_security') await saveKeyToDatabase('admin_security', memoryStore.adminSecurity);
         else if (k === 'rooms') await saveKeyToDatabase('rooms', memoryStore.rooms || {});
+        if (ok === false) allOk = false;
       }
+      lastFlushAt = Date.now();
+      lastFlushOk = allOk;
     } catch (err) {
+      lastFlushAt = Date.now();
+      lastFlushOk = false;
       console.error('[AnalyticsStore] Error saving dirty keys to PostgreSQL:', err.message);
     }
   }
@@ -458,6 +489,7 @@ export function recordInstall({ userId }) {
 // Record Bot Match
 export function recordBotGame({ userId, difficulty, winner, lifetimeStats, durationMs }) {
   const diffKey = ['beginner', 'intermediate', 'pro'].includes(difficulty) ? difficulty : 'pro';
+  incrementFunnel('botGamesStarted');
 
   if (typeof durationMs === 'number' && durationMs > 1000 && durationMs < 3600000) {
     memoryStore.botStats.totalDurationMs = (memoryStore.botStats.totalDurationMs || 0) + durationMs;
@@ -1108,6 +1140,7 @@ export async function processDueScheduledNotifications() {
         item.skippedAt = Date.now();
         item.skipReason = decision.reason;
         recordSkippedNotification(item, decision.reason);
+        logEvent('warn', 'push-skipped', `Scheduled push "${item.title}" skipped: ${decision.reason}`, { reason: decision.reason, scheduledId: item.id, title: item.title });
         console.warn(`[PushScheduler] ${decision.reason} ("${item.title}")`);
         continue;
       }
@@ -1148,6 +1181,7 @@ export async function processDueScheduledNotifications() {
         console.log(`[PushScheduler] Dispatched scheduled broadcast "${item.title}" to ${result.deliveredCount} devices (${item.slotKey || 'no slot'}, ${formatTimeIST(item.sentAt, true)}).`);
       } catch (err) {
         console.error(`[PushScheduler] Error dispatching scheduled notification "${item.id}":`, err);
+        logEvent('error', 'push-failed', `Scheduled push "${item.title}" failed: ${err.message}`, { scheduledId: item.id, title: item.title, error: err.message });
         item.status = 'failed';
         item.error = err.message;
       }
@@ -1354,6 +1388,7 @@ export function getAdminDashboardStats({ startDate, endDate } = {}) {
 export async function sendBroadcastPushNotification({ title, message, url }) {
   const subscriptions = getPushSubscriptionsList();
   if (subscriptions.length === 0) {
+    logEvent('warn', 'push-skipped', `Push "${title || 'Bingo Alert!'}" not sent: no subscribers`, { reason: 'no-subscribers', title: title || null });
     return {
       success: true,
       deliveredCount: 0,
@@ -1400,6 +1435,7 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
     deliveredCount,
     failedCount
   });
+  logEvent(failedCount && !deliveredCount ? 'warn' : 'info', 'push-sent', `Push "${title || 'Bingo Alert!'}" sent: ${deliveredCount} delivered, ${failedCount} failed`, { pushId, title: title || null, delivered: deliveredCount, failed: failedCount });
 
   return {
     success: true,
@@ -1572,6 +1608,199 @@ export function saveRoomsSnapshot(snapshot) {
 
 export function loadRoomsSnapshot() {
   return memoryStore.rooms && typeof memoryStore.rooms === 'object' ? memoryStore.rooms : {};
+}
+
+// ---------------------------------------------------------------------------------------------
+// Admin: event log persistence, per-day funnel counters, round statistics, retention, health.
+// Every write here is best-effort; a failure is logged and never reaches the game handlers.
+// ---------------------------------------------------------------------------------------------
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FUNNEL_COUNTERS = ['lobbyOpens', 'roomsCreated', 'roomsJoined', 'cardsSubmitted', 'roundsStarted', 'roundsFinished', 'replays', 'botGamesStarted'];
+const FUNNEL_KEEP_DAYS = 120;
+const ROUND_STATS_CAP = 500;
+
+export function saveAdminEvents(list) {
+  try {
+    memoryStore.adminEvents = Array.isArray(list) ? list.slice(-200) : [];
+    scheduleFlush('admin_events');
+  } catch (err) {
+    console.warn('[AnalyticsStore] Could not save admin events:', err.message);
+  }
+}
+
+export function loadAdminEvents() {
+  return Array.isArray(memoryStore.adminEvents) ? memoryStore.adminEvents : [];
+}
+
+function istDayKeyDaysAgo(daysAgo) {
+  return getTodayKeyIST(new Date(Date.now() - daysAgo * DAY_MS));
+}
+
+export function incrementFunnel(counter, n = 1) {
+  try {
+    if (!FUNNEL_COUNTERS.includes(counter)) return;
+    if (!memoryStore.funnelDaily || typeof memoryStore.funnelDaily !== 'object') memoryStore.funnelDaily = {};
+    const key = getTodayKeyIST();
+    const day = memoryStore.funnelDaily[key] || (memoryStore.funnelDaily[key] = {});
+    day[counter] = (day[counter] || 0) + n;
+    const keys = Object.keys(memoryStore.funnelDaily).sort();
+    while (keys.length > FUNNEL_KEEP_DAYS) delete memoryStore.funnelDaily[keys.shift()];
+    scheduleFlush('funnel_daily');
+  } catch (err) {
+    console.warn('[AnalyticsStore] Could not count funnel step:', err.message);
+  }
+}
+
+export function appendRoundStat(stat) {
+  try {
+    if (!stat || typeof stat !== 'object') return;
+    if (!Array.isArray(memoryStore.roundStats)) memoryStore.roundStats = [];
+    memoryStore.roundStats.push(stat);
+    if (memoryStore.roundStats.length > ROUND_STATS_CAP) {
+      memoryStore.roundStats.splice(0, memoryStore.roundStats.length - ROUND_STATS_CAP);
+    }
+    scheduleFlush('round_stats');
+  } catch (err) {
+    console.warn('[AnalyticsStore] Could not record round stat:', err.message);
+  }
+}
+
+function clampDays(days, fallback = 7) {
+  const n = parseInt(days, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(90, Math.max(1, n));
+}
+
+function round1(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function avg1(values) {
+  const nums = values.filter(v => typeof v === 'number' && Number.isFinite(v));
+  if (nums.length === 0) return null;
+  return round1(nums.reduce((a, b) => a + b, 0) / nums.length);
+}
+
+function percent1(part, base) {
+  if (!base) return null;
+  return round1((part / base) * 100);
+}
+
+// Retention is measured against dailyUniqueUsers, which is keyed by UTC day (see recordHeartbeat),
+// so cohort days are built with the same key function. Only completed days count, and a cohort
+// is used only if its day N falls inside the days the activity log covers.
+function computeRetention() {
+  const daily = memoryStore.dailyUniqueUsers || {};
+  const dayKeys = Object.keys(daily).sort();
+  const earliestKey = dayKeys[0] || null;
+  const todayKey = getTodayKey();
+  const daySets = new Map();
+  const setFor = (key) => {
+    if (!daySets.has(key)) daySets.set(key, new Set(daily[key] || []));
+    return daySets.get(key);
+  };
+  const users = Object.values(memoryStore.users || {}).filter(u => u && u.id && !u.isAdmin && typeof u.firstSeen === 'number');
+
+  const rateFor = (n) => {
+    if (!earliestKey) return null;
+    let base = 0;
+    let retained = 0;
+    for (const u of users) {
+      const dayN = getTodayKey(new Date(u.firstSeen + n * DAY_MS));
+      if (dayN >= todayKey || dayN < earliestKey) continue;
+      base++;
+      if (setFor(dayN).has(u.id)) retained++;
+    }
+    return base < 5 ? null : percent1(retained, base);
+  };
+
+  const unionDays = (from, to) => {
+    const set = new Set();
+    for (let d = from; d <= to; d++) {
+      for (const id of daily[getTodayKey(new Date(Date.now() - d * DAY_MS))] || []) set.add(id);
+    }
+    return set;
+  };
+  const thisWeek = unionDays(0, 6);
+  const prevWeek = unionDays(7, 13);
+  let both = 0;
+  for (const id of thisWeek) if (prevWeek.has(id)) both++;
+
+  return {
+    d1: rateFor(1),
+    d7: rateFor(7),
+    d30: rateFor(30),
+    returningShare7d: thisWeek.size < 5 ? null : percent1(both, thisWeek.size)
+  };
+}
+
+export function getFunnelReport({ days } = {}) {
+  const span = clampDays(days);
+  const stored = memoryStore.funnelDaily || {};
+  const rows = [];
+  const totals = {};
+  for (const c of FUNNEL_COUNTERS) totals[c] = 0;
+  for (let i = span - 1; i >= 0; i--) {
+    const date = istDayKeyDaysAgo(i);
+    const row = { date };
+    const day = stored[date] || {};
+    for (const c of FUNNEL_COUNTERS) {
+      row[c] = day[c] || 0;
+      totals[c] += row[c];
+    }
+    rows.push(row);
+  }
+
+  const cutoff = Date.now() - span * DAY_MS;
+  const recentRounds = (memoryStore.roundStats || []).filter(r => r && r.at >= cutoff);
+  const roomIds = new Set(recentRounds.map(r => r.roomId).filter(Boolean));
+  const retention = computeRetention();
+  retention.avgRoundsPerRoom = roomIds.size ? round1(recentRounds.length / roomIds.size) : null;
+
+  return { days: rows, totals, retention };
+}
+
+export function getBalanceReport({ days } = {}) {
+  const span = clampDays(days);
+  const cutoff = Date.now() - span * DAY_MS;
+  const rounds = (memoryStore.roundStats || []).filter(r => r && typeof r.at === 'number' && r.at >= cutoff);
+
+  const byPlayerCount = {};
+  for (const n of [2, 3, 4]) {
+    const subset = rounds.filter(r => r.playerCount === n);
+    byPlayerCount[n] = { rounds: subset.length, avgCalls: avg1(subset.map(r => r.calls)) };
+  }
+
+  const daily = [];
+  for (let i = span - 1; i >= 0; i--) {
+    const date = istDayKeyDaysAgo(i);
+    const subset = rounds.filter(r => getTodayKeyIST(new Date(r.at)) === date);
+    daily.push({ date, rounds: subset.length, avgCalls: avg1(subset.map(r => r.calls)) });
+  }
+
+  const durations = rounds.map(r => (typeof r.durationMs === 'number' ? r.durationMs / 1000 : null));
+  const turns = rounds.map(r => (typeof r.avgTurnMs === 'number' ? r.avgTurnMs / 1000 : null));
+  return {
+    rounds: rounds.length,
+    avgCalls: avg1(rounds.map(r => r.calls)),
+    avgDurationSec: avg1(durations),
+    avgTurnSec: avg1(turns),
+    drawRate: rounds.length >= 5 ? percent1(rounds.filter(r => r.draw).length, rounds.length) : null,
+    avgLoserLines: avg1(rounds.map(r => r.loserMaxLines)),
+    byPlayerCount,
+    daily
+  };
+}
+
+export function getStoreHealth() {
+  const postgres = isDbConnected();
+  return {
+    mode: postgres ? 'postgres' : (diskWritable ? 'disk' : 'memory'),
+    connected: postgres ? true : diskWritable,
+    lastFlushAt,
+    lastFlushOk,
+    dbError: postgres ? null : (getDbError() || null)
+  };
 }
 
 // Write everything that is pending right now (used on shutdown).

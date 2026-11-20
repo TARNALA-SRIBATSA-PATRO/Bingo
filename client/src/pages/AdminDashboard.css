@@ -1452,6 +1452,406 @@
 }
 
 /* ==========================================================================
+   Operations sections: health, live rooms, event log, funnel, balance
+   ========================================================================== */
+.admin-ops-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.admin-ops-header {
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-ops-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.admin-ops-stamp {
+  font-size: 0.74rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.admin-ops-stamp.stale {
+  color: #fbbf24;
+  white-space: normal;
+}
+
+.admin-ops-empty {
+  padding: 18px;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.88rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.admin-ops-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.admin-ops-tile {
+  background: rgba(10, 11, 16, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-ops-tile-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+}
+
+.admin-ops-tile-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-ops-tile-sub {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.admin-ops-tile.warn {
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.admin-ops-tile.warn .admin-ops-tile-value,
+.admin-ops-tile.warn .admin-ops-tile-sub {
+  color: #fbbf24;
+}
+
+.admin-ops-tile.bad {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.admin-ops-tile.bad .admin-ops-tile-value {
+  color: #f87171;
+}
+
+.admin-ops-tile.good .admin-ops-tile-value {
+  color: #4ade80;
+}
+
+.admin-ops-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  background: #64748b;
+}
+
+.admin-ops-dot.green {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.admin-ops-dot.red {
+  background: #f87171;
+}
+
+.admin-ops-dot.amber {
+  background: #fbbf24;
+}
+
+.admin-ops-dot.blue {
+  background: #38bdf8;
+}
+
+.admin-ops-dot.grey {
+  background: #64748b;
+}
+
+.admin-metric-chip.playing {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.admin-metric-chip.finished {
+  color: #94a3b8;
+}
+
+/* Live rooms */
+.admin-ops-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.admin-ops-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.admin-ops-player.turn .admin-ops-player-name {
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.admin-ops-player-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.admin-ops-player-meta.away {
+  color: #fbbf24;
+}
+
+.admin-ops-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-icon-btn.admin-ops-btn {
+  width: auto;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-icon-btn.admin-ops-btn-primary {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.admin-icon-btn.admin-ops-btn-primary:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.35);
+  color: #e0e7ff;
+}
+
+.admin-ops-message-row td {
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.admin-ops-message-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-ops-message-form .admin-input {
+  flex: 1 1 200px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}
+
+.admin-ops-counter {
+  font-size: 0.74rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* Event log */
+.admin-ops-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.admin-ops-search {
+  flex: 1 1 220px;
+  max-width: 360px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}
+
+.admin-ops-events {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.admin-ops-event {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-ops-event:last-child {
+  border-bottom: none;
+}
+
+.admin-ops-event.open {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-ops-event-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.admin-ops-event-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-ops-event-time {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.admin-ops-event-type {
+  flex-shrink: 0;
+}
+
+.admin-ops-event-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-ops-event.open .admin-ops-event-message {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.admin-ops-event-room {
+  flex-shrink: 0;
+  font-family: monospace;
+}
+
+.admin-ops-event-meta {
+  padding: 0 12px 12px;
+}
+
+.admin-ops-event-meta pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: rgba(10, 11, 16, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Funnel */
+.admin-ops-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.admin-ops-funnel-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 56px 52px;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.84rem;
+}
+
+.admin-ops-funnel-label {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.admin-ops-funnel-track {
+  height: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.admin-ops-funnel-bar {
+  height: 100%;
+  background: #6366f1;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.admin-ops-funnel-count {
+  font-weight: 800;
+  color: #f8fafc;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-ops-funnel-conv {
+  color: #a5b4fc;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.admin-ops-pair {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+/* Balance */
+.admin-ops-balance-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+.admin-ops-small-table {
+  font-size: 0.84rem;
+}
+
+.admin-ops-small-table td {
+  padding: 10px 14px;
+}
+
+.admin-ops-chart {
+  width: 100%;
+  height: 170px;
+}
+
+/* ==========================================================================
    Responsive: tablets and phones (<= 768px)
    ========================================================================== */
 @media (max-width: 768px) {
@@ -1679,6 +2079,10 @@
     min-width: 640px;
   }
 
+  .admin-page .admin-ops-chart {
+    min-width: 560px;
+  }
+
   /* Delivery pills become a full-width segmented control */
   .admin-delivery-pills {
     display: flex;
@@ -1740,6 +2144,62 @@
 
   .admin-modal-head .admin-btn.admin-btn-auto {
     width: auto;
+  }
+
+  /* Operations sections */
+  .admin-ops-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .admin-ops-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-icon-btn.admin-ops-btn {
+    height: 44px;
+    min-height: 44px;
+    padding: 0 14px;
+  }
+
+  .admin-ops-search,
+  .admin-ops-message-form .admin-input {
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .admin-ops-message-form {
+    flex-wrap: wrap;
+  }
+
+  .admin-ops-event-row {
+    min-height: 44px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .admin-ops-event-message {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-ops-funnel-row {
+    grid-template-columns: 110px 1fr 48px 44px;
+    font-size: 0.8rem;
+  }
+
+  .admin-ops-balance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-page .admin-ops-rooms-table {
+    min-width: 760px;
+  }
+
+  .admin-page .admin-ops-small-table {
+    min-width: 0;
   }
 }
 
@@ -1812,6 +2272,23 @@
 
   .admin-modal {
     padding: 18px 14px;
+  }
+
+  .admin-ops-tile-value {
+    font-size: 1rem;
+  }
+
+  .admin-ops-funnel-row {
+    grid-template-columns: 1fr 48px 44px;
+    row-gap: 4px;
+  }
+
+  .admin-ops-funnel-label {
+    grid-column: 1 / -1;
+  }
+
+  .admin-ops-actions {
+    flex-direction: column;
   }
 }
 

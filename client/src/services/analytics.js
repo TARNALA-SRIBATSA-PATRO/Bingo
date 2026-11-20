@@ -160,6 +160,21 @@ export async function reportInstallEvent() {
   } catch {}
 }
 
+// Counted once per visit to the lobby for the admin funnel.
+let lobbyOpenReported = false;
+export async function reportLobbyOpen() {
+  if (lobbyOpenReported || isCurrentSessionAdmin()) return;
+  lobbyOpenReported = true;
+  const userId = getOrCreateSecretUserId();
+  try {
+    await fetch('/api/analytics/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, event: 'lobby_open' })
+    });
+  } catch {}
+}
+
 // Queue offline event locally
 function queueOfflineEvent(event) {
   try {

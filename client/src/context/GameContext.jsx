@@ -298,8 +298,15 @@ export function GameProvider({ children }) {
     socket.on('room:deletedForInactivity', handleRoomClosed);
     socket.on('room:destroyed', handleRoomClosed);
 
+    // A short notice from the admin console to everyone in this room.
+    socket.on('room:notice', ({ roomId, text } = {}) => {
+      const id = roomRef.current.id;
+      if (!roomRef.current.isBot && id && roomId === id && text) showNotif(text, 'info', 6000);
+    });
+
     return () => {
       socket.off('room:update');
+      socket.off('room:notice');
       socket.off('game:started');
       socket.off('game:replaying');
       socket.off('game:over');

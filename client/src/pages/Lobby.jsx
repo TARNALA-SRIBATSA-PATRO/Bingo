@@ -7,6 +7,7 @@ import {
   setPersistentPlayerName
 } from '../utils/storageUtils';
 import SoundToggle from '../components/SoundToggle';
+import { reportLobbyOpen } from '../services/analytics';
 import { ArrowLeftIcon, PlusIcon, KeyIcon, BotIcon, ChevronRightIcon } from '../components/Icons';
 import './Lobby.css';
 
@@ -27,6 +28,8 @@ export default function Lobby() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
+
+  useEffect(() => { reportLobbyOpen(); }, []);
 
   useEffect(() => {
     if (!name) {

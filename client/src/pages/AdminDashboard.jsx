@@ -249,6 +249,900 @@ function CollapsibleMessage({ text, limit = 65 }) {
   );
 }
 
+// ==========================================================================
+// Operations sections: health, live rooms, event log, funnel, game balance
+// ==========================================================================
+
+const DASHBOARD_BUILD_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+const OPS_REFRESH_MS = 15000;
+const IST_TZ = 'Asia/Kolkata';
+
+const istClockFmt = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const istShortFmt = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const istFullFmt = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const istDayFmt = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, day: '2-digit', month: 'short' });
+
+function toDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// IST HH:MM:SS
+function fmtIstClock(value) {
+  const d = toDate(value);
+  return d ? istClockFmt.format(d) : '--';
+}
+
+// IST "20 Nov, 14:05"
+function fmtIstShort(value) {
+  const d = toDate(value);
+  return d ? `${istShortFmt.format(d)} IST` : '--';
+}
+
+// IST "20 Nov 2026, 14:05:33"
+function fmtIstFull(value) {
+  const d = toDate(value);
+  return d ? `${istFullFmt.format(d)} IST` : '--';
+}
+
+// "20 Nov" for a YYYY-MM-DD date string (treated as an IST calendar day)
+function fmtIstDay(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const d = new Date(`${value}T12:00:00+05:30`);
+    return Number.isNaN(d.getTime()) ? value : istDayFmt.format(d);
+  }
+  const d = toDate(value);
+  return d ? istDayFmt.format(d) : '--';
+}
+
+// 3725 -> "1h 2m", 125 -> "2m 5s", 40 -> "40s"
+function fmtDuration(totalSec) {
+  const sec = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+// 95 -> "1:35"
+function fmtMinSec(totalSec) {
+  const sec = Math.max(0, Math.round(Number(totalSec) || 0));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// "just now", "40 s ago", "5 min ago", "3 h ago"
+function fmtAgo(value, now = Date.now()) {
+  const d = toDate(value);
+  if (!d) return 'never';
+  const diff = Math.max(0, Math.floor((now - d.getTime()) / 1000));
+  if (diff < 5) return 'just now';
+  if (diff < 60) return `${diff} s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+  return `${Math.floor(diff / 86400)} d ago`;
+}
+
+function secondsSince(value, now = Date.now()) {
+  const d = toDate(value);
+  if (!d) return null;
+  return Math.max(0, Math.floor((now - d.getTime()) / 1000));
+}
+
+// Ratios may arrive as a fraction (0..1) or a percentage (0..100); null means "not enough data".
+function fmtRatio(value, digits = 0) {
+  if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) return 'n/a';
+  const n = Number(value);
+  const pctValue = n <= 1 ? n * 100 : n;
+  return `${pctValue.toFixed(digits)}%`;
+}
+
+function fmtNum(value, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+  return Number(value).toFixed(digits);
+}
+
+// Polls an admin endpoint every OPS_REFRESH_MS while the tab is visible; pauses when asked.
+function useAdminPoll(path, token, { paused = false, onUnauthorized } = {}) {
+  const [data, setData] = useState(null);
+  const [status, setStatus] = useState('loading'); // loading | ok | stale | unavailable
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchedAt, setFetchedAt] = useState(0);
+  const inFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+  const hasDataRef = useRef(false);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+
+  useEffect(() => {
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    if (!token || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setIsRefreshing(true);
+    try {
+      const res = await fetch(path, { headers: { 'x-admin-token': token } });
+      if (!mountedRef.current) return;
+      if (res.status === 401) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      // A missing route answers 404, or 200 with the app's HTML shell: both mean "not available yet".
+      const isJson = (res.headers.get('content-type') || '').includes('application/json');
+      if (!res.ok || !isJson) {
+        setStatus(hasDataRef.current ? 'stale' : 'unavailable');
+        return;
+      }
+      const json = await res.json();
+      if (!mountedRef.current) return;
+      if (!json || json.success === false) {
+        setStatus(hasDataRef.current ? 'stale' : 'unavailable');
+        return;
+      }
+      hasDataRef.current = true;
+      setData(json);
+      setStatus('ok');
+      setFetchedAt(Date.now());
+    } catch {
+      if (mountedRef.current) setStatus(hasDataRef.current ? 'stale' : 'unavailable');
+    } finally {
+      inFlightRef.current = false;
+      if (mountedRef.current) setIsRefreshing(false);
+    }
+  }, [path, token]);
+
+  // First load and whenever the path changes (deferred so the effect itself does not set state)
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(refresh, 0);
+    return () => clearTimeout(timer);
+  }, [token, refresh]);
+
+  // Auto refresh while visible and not paused
+  useEffect(() => {
+    if (!token || paused) return;
+    let timer = null;
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const start = () => {
+      if (timer === null && !document.hidden) timer = setInterval(refresh, OPS_REFRESH_MS);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        refresh();
+        start();
+      }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [token, paused, refresh]);
+
+  return { data, status, isRefreshing, fetchedAt, refresh };
+}
+
+const CrownIcon = ({ size = 12, color = '#facc15' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none" aria-hidden="true">
+    <path d="M3 18h18l-1.5-10-5 4L12 5l-2.5 7-5-4L3 18zm0 2h18v1H3v-1z" />
+  </svg>
+);
+
+function OpsCardHeader({ title, subtitle, chip, onRefresh, isRefreshing, status, fetchedAt, paused }) {
+  const stamp = status === 'unavailable'
+    ? 'Not available yet'
+    : (fetchedAt ? `${paused ? 'Paused, last' : 'Updated'} ${fmtIstClock(fetchedAt)}` : 'Loading');
+  return (
+    <div className="admin-chart-header admin-ops-header">
+      <div style={{ minWidth: 0 }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span>{title}</span>
+          {chip !== undefined && chip !== null && <span className="admin-peak-chip">{chip}</span>}
+        </h3>
+        {subtitle && (
+          <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>{subtitle}</p>
+        )}
+      </div>
+      <div className="admin-ops-header-right">
+        <span className={`admin-ops-stamp ${status === 'stale' ? 'stale' : ''}`}>
+          {status === 'stale' ? `Could not refresh, showing ${fmtIstClock(fetchedAt)}` : stamp}
+        </span>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="admin-icon-btn admin-refresh-btn"
+          title={`Refresh ${title.toLowerCase()}`}
+          aria-label={`Refresh ${title.toLowerCase()}`}
+        >
+          <RefreshIcon size={16} className={isRefreshing ? 'admin-spin' : ''} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OpsEmpty({ status, children }) {
+  if (status === 'loading') return <div className="admin-ops-empty">Loading...</div>;
+  if (status === 'unavailable') return <div className="admin-ops-empty">Not available yet</div>;
+  return <div className="admin-ops-empty">{children}</div>;
+}
+
+function OpsTile({ label, value, sub, tone, title }) {
+  return (
+    <div className={`admin-ops-tile ${tone || ''}`} title={title}>
+      <span className="admin-ops-tile-label">{label}</span>
+      <div className="admin-ops-tile-value">{value}</div>
+      {sub !== undefined && sub !== null && <span className="admin-ops-tile-sub">{sub}</span>}
+    </div>
+  );
+}
+
+// A. Health strip
+function AdminHealthStrip({ token, onUnauthorized }) {
+  const { data, status, isRefreshing, fetchedAt, refresh } = useAdminPoll('/api/admin/health', token, { onUnauthorized });
+  const h = data || null;
+  const now = fetchedAt;
+  const servedVersion = h?.version || '--';
+  const versionDiffers = Boolean(h?.version) && h.version !== DASHBOARD_BUILD_VERSION;
+  const lag = Number(h?.eventLoopLagMs);
+  const lagTone = Number.isNaN(lag) ? '' : lag > 300 ? 'bad' : lag > 100 ? 'warn' : '';
+  const storeOk = Boolean(h?.db?.connected) && h?.db?.lastFlushOk !== false;
+  const rssMb = h?.memory?.rssMb;
+  const heapMb = h?.memory?.heapUsedMb;
+
+  return (
+    <div className="admin-chart-card admin-ops-card">
+      <OpsCardHeader
+        title="Server Health"
+        subtitle="Live process and store status, refreshed every 15 seconds"
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        status={status}
+        fetchedAt={fetchedAt}
+      />
+      {!h ? (
+        <OpsEmpty status={status} />
+      ) : (
+        <div className="admin-ops-tiles">
+          <OpsTile
+            label="Version"
+            value={servedVersion}
+            tone={versionDiffers ? 'warn' : ''}
+            sub={versionDiffers ? `build ${DASHBOARD_BUILD_VERSION}, deploy pending` : `build ${DASHBOARD_BUILD_VERSION}${h.node ? `, node ${h.node}` : ''}`}
+            title={h.node ? `Node ${h.node}` : undefined}
+          />
+          <OpsTile
+            label="Up since"
+            value={fmtIstShort(h.startedAt).replace(/ IST$/, '')}
+            sub={`IST, up ${fmtDuration(h.uptimeSec)}`}
+            title={fmtIstFull(h.startedAt)}
+          />
+          <OpsTile label="Sockets" value={fmtNum(h.sockets)} sub="connected" />
+          <OpsTile
+            label="Rooms"
+            value={`${fmtNum(h.roomsPlaying)}/${fmtNum(h.rooms)}`}
+            sub="playing / total"
+          />
+          <OpsTile
+            label="Memory"
+            value={rssMb !== undefined && rssMb !== null ? `${fmtNum(rssMb)} MB` : '--'}
+            sub={heapMb !== undefined && heapMb !== null ? `heap ${fmtNum(heapMb)} MB` : 'rss'}
+          />
+          <OpsTile
+            label="Loop lag"
+            value={Number.isNaN(lag) ? '--' : `${fmtNum(lag)} ms`}
+            tone={lagTone}
+            sub={lagTone === 'bad' ? 'event loop blocked' : lagTone === 'warn' ? 'getting slow' : 'event loop'}
+          />
+          <OpsTile
+            label="Store"
+            tone={storeOk ? 'good' : 'bad'}
+            value={(
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <span className={`admin-ops-dot ${storeOk ? 'green' : 'red'}`} aria-hidden="true" />
+                <span>{h.db?.mode || 'unknown'}</span>
+              </span>
+            )}
+            sub={h.db?.lastFlushAt
+              ? `flushed ${fmtAgo(h.db.lastFlushAt, now)}${h.db?.lastFlushOk === false ? ', last flush failed' : ''}`
+              : (h.db?.connected ? 'not flushed yet' : 'not connected')}
+            title={h.db?.lastFlushAt ? fmtIstFull(h.db.lastFlushAt) : undefined}
+          />
+          <OpsTile
+            label="Last snapshot"
+            value={h.lastSnapshotAt ? fmtAgo(h.lastSnapshotAt, now) : 'none yet'}
+            sub={`${fmtNum(h.eventsBuffered)} events buffered`}
+            title={h.lastSnapshotAt ? fmtIstFull(h.lastSnapshotAt) : undefined}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// B. Live rooms
+function AdminLiveRooms({ token, onUnauthorized }) {
+  const { data, status, isRefreshing, fetchedAt, refresh } = useAdminPoll('/api/admin/rooms', token, { onUnauthorized });
+  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
+  const [now, setNow] = useState(() => Date.now());
+  const [messageRoomId, setMessageRoomId] = useState(null);
+  const [messageText, setMessageText] = useState('');
+  const [busyRoomId, setBusyRoomId] = useState(null);
+  const [feedback, setFeedback] = useState(null); // { roomId, type, text }
+
+  // Tick the idle / away counters once a second while rooms are open
+  useEffect(() => {
+    if (rooms.length === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [rooms.length]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 5000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+
+  const postRoomAction = useCallback(async (roomId, action, body) => {
+    setBusyRoomId(roomId);
+    try {
+      const res = await fetch(`/api/admin/rooms/${encodeURIComponent(roomId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        body: JSON.stringify(body || {})
+      });
+      if (res.status === 401) {
+        onUnauthorized?.();
+        return false;
+      }
+      let json = null;
+      try { json = await res.json(); } catch {}
+      if (!res.ok || (json && json.success === false)) {
+        setFeedback({ roomId, type: 'error', text: json?.error || json?.message || `Could not ${action} room ${roomId}.` });
+        return false;
+      }
+      return true;
+    } catch {
+      setFeedback({ roomId, type: 'error', text: `Network error while trying to ${action} room ${roomId}.` });
+      return false;
+    } finally {
+      setBusyRoomId(null);
+    }
+  }, [token, onUnauthorized]);
+
+  const sendMessage = async (roomId) => {
+    const text = messageText.trim().slice(0, 160);
+    if (!text) return;
+    const ok = await postRoomAction(roomId, 'message', { text });
+    if (ok) {
+      setFeedback({ roomId, type: 'success', text: `Message sent to room ${roomId}.` });
+      setMessageRoomId(null);
+      setMessageText('');
+    }
+  };
+
+  const closeRoom = async (roomId) => {
+    if (!window.confirm(`Close room ${roomId}? Everyone in it will be sent back to the lobby.`)) return;
+    const ok = await postRoomAction(roomId, 'close');
+    if (ok) {
+      setFeedback({ roomId, type: 'success', text: `Room ${roomId} closed.` });
+      if (messageRoomId === roomId) setMessageRoomId(null);
+      refresh();
+    }
+  };
+
+  const statusClass = (s) => {
+    if (s === 'playing') return 'admin-metric-chip playing';
+    if (s === 'finished') return 'admin-metric-chip finished';
+    return 'admin-metric-chip active';
+  };
+
+  return (
+    <div className="admin-chart-card admin-ops-card">
+      <OpsCardHeader
+        title="Live Rooms"
+        chip={status === 'ok' || status === 'stale' ? `${rooms.length} open` : null}
+        subtitle="Multiplayer rooms on the server right now"
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        status={status}
+        fetchedAt={fetchedAt}
+      />
+      {feedback && (
+        <div className={`admin-push-status ${feedback.type}`} style={{ marginTop: 0 }}>{feedback.text}</div>
+      )}
+      {status === 'loading' || status === 'unavailable' ? (
+        <OpsEmpty status={status} />
+      ) : rooms.length === 0 ? (
+        <OpsEmpty status={status}>No rooms open right now.</OpsEmpty>
+      ) : (
+        <div className="admin-table-wrapper admin-ops-rooms-wrapper" style={{ marginTop: 0 }}>
+          <table className="admin-table admin-ops-rooms-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Status</th>
+                <th>Round</th>
+                <th>Players</th>
+                <th>Calls</th>
+                <th>Idle</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rooms.map((room) => {
+                const idle = secondsSince(room.lastActivityAt, now);
+                const players = Array.isArray(room.players) ? room.players : [];
+                const isMessaging = messageRoomId === room.id;
+                const busy = busyRoomId === room.id;
+                return (
+                  <React.Fragment key={room.id}>
+                    <tr>
+                      <td>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f8fafc', letterSpacing: '1px' }}>{room.id}</span>
+                        {room.version !== undefined && (
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }} title={fmtIstFull(room.createdAt)}>
+                            v{room.version}, made {fmtIstClock(room.createdAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td><span className={statusClass(room.status)}>{room.status || 'unknown'}</span></td>
+                      <td>{room.round ?? '--'}</td>
+                      <td>
+                        <div className="admin-ops-players">
+                          {players.length === 0 && <span style={{ color: '#64748b' }}>empty</span>}
+                          {players.map((p, idx) => {
+                            const away = p.awaySince ? secondsSince(p.awaySince, now) : null;
+                            return (
+                              <span key={`${room.id}-${p.name}-${idx}`} className={`admin-ops-player ${p.isTurn ? 'turn' : ''}`} title={p.isCreator ? `${p.name} (host)` : p.name}>
+                                <span className={`admin-ops-dot ${p.connected ? 'green' : 'grey'}`} aria-hidden="true" />
+                                {p.isCreator && <CrownIcon />}
+                                <span className="admin-ops-player-name">{p.name}</span>
+                                {room.status === 'playing' && (
+                                  <span className="admin-ops-player-meta">lines {p.lines ?? 0}</span>
+                                )}
+                                {room.status === 'filling' && (
+                                  <span className="admin-ops-player-meta">{p.ready ? 'ready' : 'not ready'}</span>
+                                )}
+                                {away !== null && (
+                                  <span className="admin-ops-player-meta away">away {away}s</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {room.creatorName && (
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>host {room.creatorName}, {room.playerCount ?? players.length} seated</div>
+                        )}
+                      </td>
+                      <td>{room.calledCount ?? 0}</td>
+                      <td title={fmtIstFull(room.lastActivityAt)}>
+                        {idle === null ? '--' : idle < 60 ? `${idle}s` : fmtDuration(idle)}
+                      </td>
+                      <td>
+                        <div className="admin-ops-actions">
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-ops-btn"
+                            disabled={busy || (room.status === 'finished' && players.length === 0)}
+                            onClick={() => {
+                              if (isMessaging) {
+                                setMessageRoomId(null);
+                              } else {
+                                setMessageRoomId(room.id);
+                                setMessageText('');
+                              }
+                            }}
+                          >
+                            {isMessaging ? 'Cancel' : 'Message'}
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-ops-btn admin-danger"
+                            disabled={busy}
+                            onClick={() => closeRoom(room.id)}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isMessaging && (
+                      <tr className="admin-ops-message-row">
+                        <td colSpan={7}>
+                          <form
+                            className="admin-ops-message-form"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              sendMessage(room.id);
+                            }}
+                          >
+                            <input
+                              type="text"
+                              className="admin-input"
+                              value={messageText}
+                              maxLength={160}
+                              autoFocus
+                              placeholder={`Message to everyone in room ${room.id}`}
+                              onChange={(e) => setMessageText(e.target.value.slice(0, 160))}
+                            />
+                            <span className="admin-ops-counter">{messageText.length}/160</span>
+                            <button
+                              type="submit"
+                              className="admin-icon-btn admin-ops-btn admin-ops-btn-primary"
+                              disabled={busy || messageText.trim().length === 0}
+                            >
+                              {busy ? 'Sending' : 'Send'}
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// C. Event log
+const EVENT_LEVELS = ['all', 'info', 'warn', 'error'];
+
+function AdminEventLog({ token, onUnauthorized }) {
+  const [queryInput, setQueryInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [level, setLevel] = useState('all');
+  const [expandedId, setExpandedId] = useState(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(queryInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [queryInput]);
+
+  const path = `/api/admin/events?limit=300&q=${encodeURIComponent(query)}&level=${level === 'all' ? '' : level}`;
+  const paused = expandedId !== null || searchFocused;
+  const { data, status, isRefreshing, fetchedAt, refresh } = useAdminPoll(path, token, { paused, onUnauthorized });
+  const events = useMemo(() => (Array.isArray(data?.events) ? data.events.slice(0, 300) : []), [data]);
+
+  const levelDot = (lvl) => {
+    if (lvl === 'error') return 'red';
+    if (lvl === 'warn') return 'amber';
+    if (lvl === 'info') return 'blue';
+    return 'grey';
+  };
+
+  return (
+    <div className="admin-chart-card admin-ops-card">
+      <OpsCardHeader
+        title="Event Log"
+        chip={status === 'ok' || status === 'stale' ? `${events.length} shown` : null}
+        subtitle="Newest first. Click a row to see its details. Refresh pauses while you search or read one."
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        status={status}
+        fetchedAt={fetchedAt}
+        paused={paused}
+      />
+      <div className="admin-ops-toolbar">
+        <input
+          type="search"
+          className="admin-input admin-ops-search"
+          placeholder="Search message, type or room code"
+          value={queryInput}
+          onChange={(e) => setQueryInput(e.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          aria-label="Search events"
+        />
+        <div className="admin-range-pills" style={{ margin: 0 }}>
+          {EVENT_LEVELS.map((lvl) => (
+            <button
+              key={lvl}
+              type="button"
+              className={`admin-range-pill ${level === lvl ? 'active' : ''}`}
+              onClick={() => { setLevel(lvl); setExpandedId(null); }}
+            >
+              {lvl}
+            </button>
+          ))}
+        </div>
+      </div>
+      {status === 'loading' || status === 'unavailable' ? (
+        <OpsEmpty status={status} />
+      ) : events.length === 0 ? (
+        <OpsEmpty status={status}>No events match.</OpsEmpty>
+      ) : (
+        <div className="admin-ops-events" role="list">
+          {events.map((ev, idx) => {
+            const key = ev.id ?? `${ev.at}-${idx}`;
+            const isOpen = expandedId === key;
+            const hasMeta = ev.meta !== undefined && ev.meta !== null && !(typeof ev.meta === 'object' && Object.keys(ev.meta).length === 0);
+            return (
+              <div key={key} className={`admin-ops-event ${isOpen ? 'open' : ''}`} role="listitem">
+                <button
+                  type="button"
+                  className="admin-ops-event-row"
+                  onClick={() => setExpandedId(isOpen ? null : key)}
+                  aria-expanded={isOpen}
+                  title={fmtIstFull(ev.at)}
+                >
+                  <span className="admin-ops-event-time">{fmtIstClock(ev.at)}</span>
+                  <span className={`admin-ops-dot ${levelDot(ev.level)}`} aria-label={ev.level || 'event'} />
+                  <span className="admin-metric-chip admin-ops-event-type">{ev.type || 'event'}</span>
+                  <span className="admin-ops-event-message">{ev.message || ''}</span>
+                  {ev.roomId && <span className="admin-metric-chip active admin-ops-event-room">{ev.roomId}</span>}
+                </button>
+                {isOpen && (
+                  <div className="admin-ops-event-meta">
+                    <div style={{ fontSize: '0.74rem', color: '#64748b', marginBottom: '6px' }}>
+                      {fmtIstFull(ev.at)}{ev.level ? `, ${ev.level}` : ''}{ev.id !== undefined ? `, id ${ev.id}` : ''}
+                    </div>
+                    {hasMeta ? (
+                      <pre>{JSON.stringify(ev.meta, null, 2)}</pre>
+                    ) : (
+                      <span style={{ color: '#64748b', fontSize: '0.8rem' }}>No extra details.</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// D. Funnel and retention
+const FUNNEL_STEPS = [
+  { key: 'roomsCreated', label: 'Rooms created' },
+  { key: 'seats', label: 'Players seated' },
+  { key: 'cardsSubmitted', label: 'Cards submitted' },
+  { key: 'roundsStarted', label: 'Rounds started' },
+  { key: 'roundsFinished', label: 'Rounds finished' }
+];
+
+function sumDays(days, key) {
+  return days.reduce((acc, d) => acc + (Number(d?.[key]) || 0), 0);
+}
+
+function RangePills({ value, onChange }) {
+  return (
+    <div className="admin-range-pills" style={{ margin: 0 }}>
+      {[7, 30].map((d) => (
+        <button
+          key={d}
+          type="button"
+          className={`admin-range-pill ${value === d ? 'active' : ''}`}
+          onClick={() => onChange(d)}
+        >
+          {d} days
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdminFunnelCard({ token, onUnauthorized }) {
+  const [days, setDays] = useState(7);
+  const { data, status, isRefreshing, fetchedAt, refresh } = useAdminPoll(`/api/admin/funnel?days=${days}`, token, { onUnauthorized });
+  const dayRows = Array.isArray(data?.days) ? data.days : [];
+  const totals = data?.totals || {};
+  // 'seats' is everyone who sat down: the creator of each room plus every join.
+  const totalOf = (key) => (key === 'seats'
+    ? totalOf('roomsCreated') + totalOf('roomsJoined')
+    : (totals[key] !== undefined && totals[key] !== null ? Number(totals[key]) || 0 : sumDays(dayRows, key)));
+  const counts = FUNNEL_STEPS.map((s) => totalOf(s.key));
+  const maxCount = Math.max(1, ...counts);
+  const retention = data?.retention || {};
+
+  return (
+    <div className="admin-chart-card admin-ops-card">
+      <OpsCardHeader
+        title="Funnel and Retention"
+        subtitle={`Multiplayer journey over the last ${days} days`}
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        status={status}
+        fetchedAt={fetchedAt}
+      />
+      <div className="admin-ops-toolbar">
+        <RangePills value={days} onChange={setDays} />
+      </div>
+      {!data ? (
+        <OpsEmpty status={status} />
+      ) : (
+        <>
+          <div className="admin-ops-funnel">
+            {FUNNEL_STEPS.map((step, i) => {
+              const count = counts[i];
+              const prev = i > 0 ? counts[i - 1] : null;
+              const conv = prev === null ? null : prev > 0 ? Math.round((count / prev) * 100) : null;
+              const width = Math.max(2, Math.round((count / maxCount) * 100));
+              return (
+                <div key={step.key} className="admin-ops-funnel-row">
+                  <span className="admin-ops-funnel-label">{step.label}</span>
+                  <div className="admin-ops-funnel-track">
+                    <div className="admin-ops-funnel-bar" style={{ width: `${width}%` }} />
+                  </div>
+                  <span className="admin-ops-funnel-count">{count}</span>
+                  <span className="admin-ops-funnel-conv">{conv === null ? (i === 0 ? '' : 'n/a') : `${conv}%`}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="admin-ops-pair">
+            <span className="admin-metric-chip success">Replays {totalOf('replays')}</span>
+            <span className="admin-metric-chip active">Bot games {totalOf('botGamesStarted')}</span>
+          </div>
+          <div className="admin-ops-tiles admin-ops-tiles-5">
+            <OpsTile label="D1 retention" value={fmtRatio(retention.d1)} sub="back next day" />
+            <OpsTile label="D7 retention" value={fmtRatio(retention.d7)} sub="back within a week" />
+            <OpsTile label="D30 retention" value={fmtRatio(retention.d30)} sub="back within a month" />
+            <OpsTile label="Returning share" value={fmtRatio(data.returningShare7d)} sub="of players, last 7 days" />
+            <OpsTile label="Rounds per room" value={fmtNum(data.avgRoundsPerRoom, 1)} sub="average" />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// E. Game balance
+function AvgCallsChart({ daily }) {
+  const rows = Array.isArray(daily) ? daily.filter((d) => d && d.date) : [];
+  if (rows.length === 0) return <div className="admin-ops-empty" style={{ marginTop: '12px' }}>No rounds in this range.</div>;
+  const w = 720;
+  const hgt = 170;
+  const left = 40;
+  const right = 690;
+  const topY = 24;
+  const baseY = 130;
+  const maxVal = Math.max(1, ...rows.map((d) => Number(d.avgCalls) || 0));
+  const stepX = rows.length > 1 ? (right - left) / (rows.length - 1) : 0;
+  const points = rows.map((d, i) => {
+    const v = Number(d.avgCalls) || 0;
+    return {
+      x: rows.length > 1 ? left + i * stepX : (left + right) / 2,
+      y: baseY - (v / maxVal) * (baseY - topY),
+      v,
+      rounds: Number(d.rounds) || 0,
+      date: d.date
+    };
+  });
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${baseY} L ${points[0].x.toFixed(1)} ${baseY} Z`;
+  const labelEvery = rows.length > 16 ? 5 : rows.length > 8 ? 2 : 1;
+
+  return (
+    <div className="admin-hourly-chart-scroll">
+    <div className="admin-ops-chart">
+      <svg viewBox={`0 0 ${w} ${hgt}`} width="100%" height="100%" style={{ overflow: 'visible' }} role="img" aria-label="Average calls per round by day">
+        <defs>
+          <linearGradient id="opsCallsGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#2dd4bf" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1={left - 10} y1={topY} x2={right + 15} y2={topY} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+        <line x1={left - 10} y1={Math.round((topY + baseY) / 2)} x2={right + 15} y2={Math.round((topY + baseY) / 2)} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+        <line x1={left - 10} y1={baseY} x2={right + 15} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+        <text x={left - 14} y={topY + 3} fontSize="9" fill="#64748b" textAnchor="end">{maxVal.toFixed(0)}</text>
+        <text x={left - 14} y={Math.round((topY + baseY) / 2) + 3} fontSize="9" fill="#64748b" textAnchor="end">{(maxVal / 2).toFixed(0)}</text>
+        <text x={left - 14} y={baseY + 3} fontSize="9" fill="#64748b" textAnchor="end">0</text>
+        {points.length > 1 && <path d={areaPath} fill="url(#opsCallsGrad)" />}
+        {points.length > 1 && (
+          <path d={linePath} fill="none" stroke="#2dd4bf" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {points.map((p, i) => (
+          <g key={p.date}>
+            <circle cx={p.x} cy={p.y} r={p.rounds > 0 ? 3.5 : 2} fill={p.rounds > 0 ? '#2dd4bf' : '#475569'} stroke="#0f172a" strokeWidth="1.5">
+              <title>{`${fmtIstDay(p.date)}: ${p.v.toFixed(1)} calls on average, ${p.rounds} rounds`}</title>
+            </circle>
+            {(i % labelEvery === 0 || i === points.length - 1) && (
+              <text x={p.x} y={baseY + 16} fontSize="8.5" fontFamily="monospace" fill="#94a3b8" textAnchor="middle">{fmtIstDay(p.date)}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+    </div>
+  );
+}
+
+function AdminBalanceCard({ token, onUnauthorized }) {
+  const [days, setDays] = useState(7);
+  const { data, status, isRefreshing, fetchedAt, refresh } = useAdminPoll(`/api/admin/balance?days=${days}`, token, { onUnauthorized });
+  const byCount = data?.byPlayerCount || {};
+
+  return (
+    <div className="admin-chart-card admin-ops-card">
+      <OpsCardHeader
+        title="Game Balance"
+        subtitle={`How multiplayer rounds play out over the last ${days} days`}
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        status={status}
+        fetchedAt={fetchedAt}
+      />
+      <div className="admin-ops-toolbar">
+        <RangePills value={days} onChange={setDays} />
+      </div>
+      {!data ? (
+        <OpsEmpty status={status} />
+      ) : (
+        <>
+          <div className="admin-ops-tiles">
+            <OpsTile label="Rounds" value={fmtNum(data.rounds)} sub="finished" />
+            <OpsTile label="Calls per round" value={fmtNum(data.avgCalls, 1)} sub="average" />
+            <OpsTile label="Round length" value={data.avgDurationSec !== null && data.avgDurationSec !== undefined ? fmtMinSec(data.avgDurationSec) : '--'} sub="average, m:ss" />
+            <OpsTile label="Turn" value={data.avgTurnSec !== null && data.avgTurnSec !== undefined ? `${fmtNum(data.avgTurnSec, 1)} s` : '--'} sub="average" />
+            <OpsTile label="Draw rate" value={fmtRatio(data.drawRate)} sub="rounds ending tied" />
+            <OpsTile label="Loser lines" value={fmtNum(data.avgLoserLines, 1)} sub="average at the end" />
+          </div>
+          <div className="admin-ops-balance-grid">
+            <div className="admin-table-wrapper" style={{ marginTop: 0 }}>
+              <table className="admin-table admin-ops-small-table">
+                <thead>
+                  <tr>
+                    <th>Players</th>
+                    <th>Rounds</th>
+                    <th>Avg calls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[2, 3, 4].map((n) => {
+                    const row = byCount[n] || byCount[String(n)] || {};
+                    return (
+                      <tr key={n}>
+                        <td style={{ fontWeight: 700, color: '#f8fafc' }}>{n} players</td>
+                        <td>{fmtNum(row.rounds)}</td>
+                        <td>{row.rounds ? fmtNum(row.avgCalls, 1) : '--'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                Average calls per round, by day
+              </div>
+              <AvgCallsChart daily={data.daily} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   // Mark session as admin so this device is never counted as an active player
   useEffect(() => {
@@ -485,6 +1379,9 @@ export default function AdminDashboard() {
   }, [token]);
 
   // Extend / Refresh Session
+  // Ops sections call this when the server answers 401
+  const handleAdminUnauthorized = useCallback(() => handleLogout(true), [handleLogout]);
+
   const extendSession = useCallback(async () => {
     if (!token) return;
     try {
@@ -1564,6 +2461,15 @@ export default function AdminDashboard() {
             <span>{pushFunnel.totalClicks || 0} clicked • {pushFunnel.totalConversions || 0} played game</span>
           </div>
         </div>
+      </div>
+
+      {/* Operations: health, live rooms, event log, funnel, balance */}
+      <div className="admin-ops-stack">
+        <AdminHealthStrip token={token} onUnauthorized={handleAdminUnauthorized} />
+        <AdminLiveRooms token={token} onUnauthorized={handleAdminUnauthorized} />
+        <AdminEventLog token={token} onUnauthorized={handleAdminUnauthorized} />
+        <AdminFunnelCard token={token} onUnauthorized={handleAdminUnauthorized} />
+        <AdminBalanceCard token={token} onUnauthorized={handleAdminUnauthorized} />
       </div>
 
       {/* Charts Grid */}
