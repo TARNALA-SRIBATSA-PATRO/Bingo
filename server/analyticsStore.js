@@ -1134,8 +1134,8 @@ export async function sendBroadcastPushNotification({ title, message, url }) {
     pushId,
     title: title || 'Bingo Alert!',
     body: message || 'Check out what is new in Bingo!',
-    icon: '/icons/icon-192.png',
-    badge: '/favicon.svg',
+    icon: '/icons/icon-192-v2.png',
+    badge: '/favicon-v2.svg',
     url: url || '/',
     timestamp: Date.now()
   });

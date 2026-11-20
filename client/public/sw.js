@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bingo-pwa-v2.6.3';
+const CACHE_NAME = 'bingo-pwa-v2.6.4';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -6,9 +6,9 @@ const PRECACHE_ASSETS = [
   '/manifest.json',
   '/admin-manifest.json',
   '/version.json',
-  '/favicon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/favicon-v2.svg',
+  '/icons/icon-192-v2.png',
+  '/icons/icon-512-v2.png',
   '/sounds/bgm-game.mp3',
   '/sounds/bgm-lobby%20and%20home.mp3'
 ];
@@ -144,8 +144,8 @@ self.addEventListener('push', (event) => {
   const pushId = data.pushId || data.id || null;
   const options = {
     body: data.body || 'Open Bingo to play now!',
-    icon: data.icon || '/icons/icon-192.png',
-    badge: '/favicon.svg',
+    icon: data.icon || '/icons/icon-192-v2.png',
+    badge: '/favicon-v2.svg',
     data: {
       url: data.url || '/',
       pushId: pushId
