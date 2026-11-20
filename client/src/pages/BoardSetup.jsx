@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import SoundToggle from '../components/SoundToggle';
 import StartGameModal from '../components/StartGameModal';
+import ReturningPanel from '../components/ReturningPanel';
 import {
   CopyIcon, ShareIcon, CheckIcon, ShuffleIcon, TrashIcon, PencilIcon, CrownIcon, ClockIcon,
   PlayIcon, TrophyIcon, LogOutIcon, TriangleDownIcon, TriangleUpIcon, BotIcon
@@ -11,6 +12,8 @@ import { triggerShare, copyToClipboard } from '../utils/shareUtils';
 import './BoardSetup.css';
 
 const EMPTY_BOARD = () => Array.from({ length: 5 }, () => Array(5).fill(null));
+// Shown whenever the card in state belongs to another room or round. Never changed in place.
+const BLANK_BOARD = EMPTY_BOARD();
 
 function generateRandomBoard() {
   const nums = Array.from({ length: 25 }, (_, i) => i + 1);
@@ -28,16 +31,18 @@ function isFullBoard(b) {
 export default function BoardSetup() {
   const navigate = useNavigate();
   const {
-    roomData, myPlayer, playerName, isCreator, playerId,
+    roomData, myPlayer, playerName, isCreator, playerId, sessionPending,
     submitBoard, startGame, leaveRoom, showNotif, setShareModalData
   } = useGame();
 
-  const [board, setBoard] = useState(EMPTY_BOARD);
+  // The card being arranged, tagged with the room and round it belongs to, so a card from an
+  // earlier round is never shown, locked or saved as this round's.
+  const [card, setCard] = useState({ roomId: null, gameIndex: null, board: BLANK_BOARD });
   const [manualMode, setManualMode] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [manualTarget, setManualTarget] = useState(null); // { r, c }
   const [inputError, setInputError] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [startError, setStartError] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
@@ -45,69 +50,61 @@ export default function BoardSetup() {
   const MAX_HISTORY_ROWS = 3;
 
   useEffect(() => {
-    if (!roomData) navigate('/lobby');
-  }, [roomData, navigate]);
+    if (!roomData && !sessionPending) navigate('/lobby');
+  }, [roomData, sessionPending, navigate]);
 
   const isBot = Boolean(roomData?.isBot);
+  const roomId = roomData?.id || null;
   const gameIndex = roomData?.currentGameIndex ?? 0;
   const stableName = myPlayer?.name || playerName || '';
-  const storageKey = roomData?.id ? `bingo_setup_${roomData.id}_${stableName}` : null;
-  const legacyKey = roomData?.id && playerId ? `bingo_setup_${roomData.id}_${playerId}` : null;
+  const storageKey = roomId ? `bingo_setup_${roomId}_${stableName}` : null;
+  const legacyKey = roomId && playerId ? `bingo_setup_${roomId}_${playerId}` : null;
+
+  // The lock comes from the server alone: the card is locked while the server holds it as ready
+  // for this round. Against the bot the card stays editable.
+  const serverBoard = myPlayer?.board;
+  const serverHasCard = !isBot && myPlayer?.ready === true && isFullBoard(serverBoard);
+  const cardIsCurrent = card.roomId === roomId && card.gameIndex === gameIndex;
+  const board = serverHasCard ? serverBoard : cardIsCurrent ? card.board : BLANK_BOARD;
+  const setBoard = (next) => setCard({ roomId, gameIndex, board: next });
 
   const totalFilled = board.flat().filter(Boolean).length;
   const isBoardFull = totalFilled === 25;
-  // Only a multiplayer card locks after submit; against the bot the card stays editable.
-  const isLocked = !isBot && (submitted || Boolean(myPlayer?.ready)) && isBoardFull;
+  const isLocked = serverHasCard;
 
-  // Restore a card for this round from the server or local storage, otherwise start blank.
+  // A new round (or the first render for this room) picks up its card: the one the server holds,
+  // else the local draft saved for this very round, else a blank card.
   useEffect(() => {
-    if (!roomData?.id) return;
-
-    if (isBot) {
-      setSubmitted(false);
-      if (isFullBoard(myPlayer?.board)) {
-        setBoard(myPlayer.board);
-        return;
-      }
-    }
-
-    if (!isBot && myPlayer?.ready && isFullBoard(myPlayer.board)) {
-      setBoard(myPlayer.board);
-      setSubmitted(true);
-      return;
-    }
-
-    try {
-      const saved = (storageKey && localStorage.getItem(storageKey)) || (legacyKey && localStorage.getItem(legacyKey));
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.gameIndex === gameIndex) {
-          if (Array.isArray(parsed.board) && parsed.board.length === 5) setBoard(parsed.board);
-          if (!isBot && (parsed.submitted || myPlayer?.ready) && isFullBoard(parsed.board)) setSubmitted(true);
-          return;
+    if (!roomId || cardIsCurrent) return;
+    let next = null;
+    if (isFullBoard(serverBoard)) next = serverBoard;
+    if (!next) {
+      try {
+        const saved = (storageKey && localStorage.getItem(storageKey)) || (legacyKey && localStorage.getItem(legacyKey));
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.gameIndex === gameIndex && Array.isArray(parsed.board) && parsed.board.length === 5) next = parsed.board;
         }
-      }
-    } catch {}
-
-    setBoard(EMPTY_BOARD());
+      } catch {}
+    }
+    setCard({ roomId, gameIndex, board: next || EMPTY_BOARD() });
     setManualMode(false);
     setManualInput('');
     setManualTarget(null);
     setInputError('');
-    setSubmitted(false);
     setStartError('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameIndex, roomData?.id, stableName, myPlayer?.ready, myPlayer?.board, isBot]);
+    setSubmitting(false);
+  }, [roomId, gameIndex, cardIsCurrent, serverBoard, storageKey, legacyKey]);
 
-  // Keep the in-progress card in local storage so a refresh does not lose it.
+  // Keep the in-progress card in local storage so a refresh does not lose it. Only a card for the
+  // current round is saved, and once the server holds the card the draft is not needed.
   useEffect(() => {
-    if (!storageKey) return;
-    if (!isBot && myPlayer?.ready && totalFilled === 0) return;
-    const shouldSaveSubmitted = !isBot && (submitted || Boolean(myPlayer?.ready)) && totalFilled === 25;
+    if (!storageKey || !cardIsCurrent) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ gameIndex, board, submitted: shouldSaveSubmitted }));
+      if (serverHasCard) localStorage.removeItem(storageKey);
+      else localStorage.setItem(storageKey, JSON.stringify({ gameIndex, board: card.board }));
     } catch {}
-  }, [storageKey, board, submitted, gameIndex, myPlayer?.ready, isBot, totalFilled]);
+  }, [storageKey, cardIsCurrent, serverHasCard, gameIndex, card.board]);
 
   function handleCellClick(r, c) {
     if (isLocked) return;
@@ -157,6 +154,7 @@ export default function BoardSetup() {
   }
 
   function handleSubmit() {
+    if (submitting) return;
     const flat = board.flat();
     if (flat.some(n => n === null || n === undefined)) {
       showNotif('Fill all 25 cells first.', 'warning');
@@ -166,12 +164,11 @@ export default function BoardSetup() {
       showNotif('Each number can only appear once.', 'error');
       return;
     }
+    setSubmitting(true);
     submitBoard(board, (res) => {
-      if (!res.success) { showNotif(res.error, 'error'); return; }
-      if (!isBot) setSubmitted(true);
-      if (storageKey) {
-        try { localStorage.setItem(storageKey, JSON.stringify({ gameIndex, board, submitted: !isBot })); } catch {}
-      }
+      setSubmitting(false);
+      if (!res.success) showNotif(res.error, 'error');
+      // The lock follows from the next room update, where the server marks this card as ready.
     });
   }
 
@@ -205,6 +202,8 @@ export default function BoardSetup() {
       setShowStartModal(false);
     }
   }, [isBot, isCreator, allReady, roomData?.currentGameIndex]);
+
+  if (!roomData) return sessionPending ? <ReturningPanel /> : null;
 
   const historyList = roomData?.gameHistory || [];
   const shouldTruncate = historyList.length > MAX_HISTORY_ROWS;
@@ -335,9 +334,9 @@ export default function BoardSetup() {
                 </div>
               )}
 
-              <button className="btn btn-primary submit-board-btn" onClick={handleSubmit} disabled={!isBoardFull} type="button">
+              <button className="btn btn-primary submit-board-btn" onClick={handleSubmit} disabled={!isBoardFull || submitting} type="button">
                 <CheckIcon size={18} />
-                <span>{isBot ? 'Start match' : 'Submit card'}</span>
+                <span>{isBot ? 'Start match' : submitting ? 'Submitting' : 'Submit card'}</span>
               </button>
             </div>
           )}
@@ -367,7 +366,9 @@ export default function BoardSetup() {
                       {p.id === playerId && <span className="you-note">(you)</span>}
                     </span>
                     <span className={`player-status ${p.ready ? 'ready' : ''}`}>
-                      {p.ready ? <><CheckIcon size={13} /> Ready</> : <><ClockIcon size={13} /> Arranging</>}
+                      {p.connected === false
+                        ? <><ClockIcon size={13} /> Away</>
+                        : p.ready ? <><CheckIcon size={13} /> Ready</> : <><ClockIcon size={13} /> Arranging</>}
                     </span>
                   </div>
                 ))}

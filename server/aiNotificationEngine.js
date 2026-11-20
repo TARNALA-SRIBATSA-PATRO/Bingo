@@ -624,6 +624,11 @@ const MIN_LEAD_TIME_MS = 2 * 60 * 60 * 1000; // 2 HOURS STRICT REVIEW BUFFER
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+/** Quiet hours (IST): nothing is ever sent from 23:00 up to 08:00; such sends move to 08:30. */
+export const QUIET_HOURS_IST = { startHour: 23, endHour: 8, resumeHour: 8, resumeMinute: 30 };
+/** A scheduled item that is later than this is not sent any more (server slept / restarted). */
+export const MAX_LATE_DISPATCH_MS = 45 * 60 * 1000;
+
 /** FNV-1a string hash -> 32-bit unsigned int */
 function hashString(str) {
   let h = 2166136261 >>> 0;
@@ -655,10 +660,89 @@ export function getIstDateKey(dateOrMs = Date.now()) {
   return `${y}-${m}-${d}`;
 }
 
+function toMs(dateOrMs) {
+  if (dateOrMs instanceof Date) return dateOrMs.getTime();
+  if (typeof dateOrMs === 'number') return dateOrMs;
+  const parsed = new Date(dateOrMs).getTime();
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+/** True when the IST clock at `ms` is inside the quiet hours (23:00-07:59). */
+export function isQuietHoursIST(dateOrMs = Date.now()) {
+  const hour = new Date(toMs(dateOrMs) + IST_OFFSET_MS).getUTCHours();
+  return hour >= QUIET_HOURS_IST.startHour || hour < QUIET_HOURS_IST.endHour;
+}
+
+/**
+ * If `ms` falls in the quiet hours, return the next 08:30 IST (same day when it is
+ * still before 08:00, otherwise the next day). Any other time is returned unchanged.
+ */
+export function nextAllowedSendTime(dateOrMs = Date.now()) {
+  const ms = toMs(dateOrMs);
+  if (!isQuietHoursIST(ms)) return ms;
+  const ist = new Date(ms + IST_OFFSET_MS);
+  if (ist.getUTCHours() >= QUIET_HOURS_IST.startHour) ist.setUTCDate(ist.getUTCDate() + 1);
+  ist.setUTCHours(QUIET_HOURS_IST.resumeHour, QUIET_HOURS_IST.resumeMinute, 0, 0);
+  return ist.getTime() - IST_OFFSET_MS;
+}
+
+/**
+ * SINGLE SOURCE OF TRUTH for "what moment is this notification received in".
+ * Everything about the copy (slot, weekday, weekend, festival, festival eve) is
+ * derived from the send moment `ms`, never from "now" at generation time.
+ * Festival detection keeps using detectSpecialOccasion() unchanged; it is simply
+ * evaluated for the target date (and for the day after, to know festival eves).
+ */
+export function getMomentContext(dateOrMs = Date.now()) {
+  const ms = toMs(dateOrMs);
+  const ist = new Date(ms + IST_OFFSET_MS);
+  const hour = ist.getUTCHours();
+  const minute = ist.getUTCMinutes();
+  const dayIndex = ist.getUTCDay();
+  const slot = getSlotForHour(hour);
+  const specialDay = detectSpecialOccasion(ms);
+  const nextDayMs = ms + 24 * 60 * 60 * 1000;
+  const eveOf = specialDay ? null : detectSpecialOccasion(nextDayMs);
+  return {
+    ms,
+    hour,
+    minute,
+    minuteOfDay: hour * 60 + minute,
+    dayIndex,
+    dayName: DAY_NAMES[dayIndex],
+    isWeekend: dayIndex === 0 || dayIndex === 6,
+    dateKey: getIstDateKey(ms),
+    nextDateKey: getIstDateKey(nextDayMs),
+    slotKey: slot.slotKey,
+    slotTitle: slot.slotTitle,
+    slotIcon: slot.slotIcon,
+    specialDay,
+    eveOf,
+    isQuietHours: isQuietHoursIST(ms),
+    istTimeString: formatTimeIST(ms, true),
+    istDateString: formatDateIST(ms)
+  };
+}
+
 function resolveNowMs(context, options = {}) {
   if (typeof options.now === 'number' && Number.isFinite(options.now)) return options.now;
   if (context && typeof context.nowMs === 'number' && Number.isFinite(context.nowMs)) return context.nowMs;
   return Date.now();
+}
+
+function makeWindowFromMs(ms, extra = {}) {
+  const m = getMomentContext(ms);
+  return {
+    ms,
+    slotKey: m.slotKey,
+    slotTitle: m.slotTitle,
+    slotIcon: m.slotIcon,
+    desc: extra.desc || m.slotTitle,
+    dayOffset: extra.dayOffset ?? 0,
+    dateKey: m.dateKey,
+    festival: Boolean(extra.festival),
+    jitterMinutes: extra.jitterMinutes || 0
+  };
 }
 
 /**
@@ -667,6 +751,7 @@ function resolveNowMs(context, options = {}) {
  * - Festival mornings are always evaluated first (festival-morning rule)
  * - Each window gets a deterministic jitter of -20..+20 minutes seeded by
  *   IST date + slot, so the exact minute changes from day to day
+ * - No window ever lands in the quiet hours (23:00-08:00 IST)
  * - options.preferredSlotKey moves that slot's earliest window to the front
  *   (unless a festival-morning window is already first)
  */
@@ -718,21 +803,9 @@ export function getCandidateTriggerWindows(context, options = {}) {
     const targetIST = new Date(istNow);
     targetIST.setUTCDate(targetIST.getUTCDate() + w.dayOffset);
     targetIST.setUTCHours(w.hour, w.minute + jitterMinutes, 0, 0);
-    const ms = targetIST.getTime() - IST_OFFSET_MS;
+    const ms = nextAllowedSendTime(targetIST.getTime() - IST_OFFSET_MS);
     if (ms < earliestAllowedMs) continue;
-
-    const slot = getSlotForHour(targetIST.getUTCHours());
-    windows.push({
-      ms,
-      slotKey: slot.slotKey,
-      slotTitle: slot.slotTitle,
-      slotIcon: slot.slotIcon,
-      desc: w.desc,
-      dayOffset: w.dayOffset,
-      dateKey: w.dateKey,
-      festival: w.festival,
-      jitterMinutes
-    });
+    windows.push(makeWindowFromMs(ms, { desc: w.desc, dayOffset: w.dayOffset, festival: w.festival, jitterMinutes }));
   }
 
   // Preferred slot (auto-pilot rotation) goes first, but never ahead of a festival morning
@@ -744,21 +817,10 @@ export function getCandidateTriggerWindows(context, options = {}) {
     }
   }
 
-  // Fallback: exactly 2 hours and 15 minutes in advance
+  // Fallback: exactly 2 hours and 15 minutes in advance (moved out of the quiet hours if needed)
   if (windows.length === 0) {
-    const ms = earliestAllowedMs + 15 * 60 * 1000;
-    const slot = getSlotForHour(new Date(ms + IST_OFFSET_MS).getUTCHours());
-    windows.push({
-      ms,
-      slotKey: slot.slotKey,
-      slotTitle: slot.slotTitle,
-      slotIcon: slot.slotIcon,
-      desc: 'Earliest Safe Window',
-      dayOffset: 0,
-      dateKey: getIstDateKey(ms),
-      festival: false,
-      jitterMinutes: 0
-    });
+    const ms = nextAllowedSendTime(earliestAllowedMs + 15 * 60 * 1000);
+    windows.push(makeWindowFromMs(ms, { desc: 'Earliest Safe Window', dayOffset: 0 }));
   }
 
   return windows;
@@ -879,22 +941,22 @@ export function analyzeNotificationPacingAndProbabilities({
   if (sentTodayCount === 0) {
     volumeStatus = 'optimal';
     fatigueFactor = 1.05;
-    advice = 'Optimal Pacing: 0 sent today. Subscribers are fresh and receptive. High click rate expected.';
+    advice = 'Good pacing: nothing sent today yet. Subscribers are fresh, a good click rate is likely.';
   } else if (sentTodayCount === 1) {
     volumeStatus = 'optimal';
     fatigueFactor = 0.92;
-    advice = 'Good Pacing: 1 sent earlier today. Scheduling an evening or relaxation round is safe and optimal.';
+    advice = 'Good pacing: 1 sent earlier today. One more in the evening or relaxation window is safe.';
   } else if (sentTodayCount === 2) {
     volumeStatus = 'moderate';
     fatigueFactor = 0.62;
-    advice = 'Fatigue Warning: 2 messages already sent today. We recommend waiting until tomorrow unless celebrating a festival.';
+    advice = 'Fatigue warning: 2 messages already sent today. Better to wait until tomorrow unless it is a festival.';
   } else {
     volumeStatus = 'high_fatigue';
     fatigueFactor = 0.35;
-    advice = 'High Fatigue Danger: 3+ notifications sent today! Additional pushes risk user muting or app uninstalls.';
+    advice = 'High fatigue: 3 or more notifications sent today. More pushes risk muting or uninstalls.';
   }
 
-  // 2. Slot & Festive Engagement Boost
+  // 2. Slot & Festive Lift
   let slotBoost = 1.0;
   if (isSpecialOccasion) slotBoost += 0.30;
   if (targetSlot.slotKey === 'dinner_chill') slotBoost += 0.22;
@@ -934,90 +996,177 @@ export function analyzeNotificationPacingAndProbabilities({
 }
 
 /**
- * Copy variant pools. Every slot has 6 distinct title+message pairs, plus generic,
- * weekend and festive pools. `{day}` = target weekday name, `{festival}` = festival name.
+ * Copy variant pools. Lines a friend would send, Indian everyday context.
+ * `{day}` = target weekday name, `{festival}` = festival name (both from the TARGET date).
+ *
+ * Optional tags decide when a line may go out (all evaluated for the send moment):
+ *   weekdayOnly  - office / commute / lunch-at-work wording, never on Saturday or Sunday
+ *   weekendOnly  - weekend wording, never Monday-Friday
+ *   days         - only on these weekday names (e.g. "end of the week" only on Friday)
+ *   notBefore    - earliest IST clock time "HH:MM" (late-night wording only after 21:30)
+ *   notAfter     - latest IST clock time "HH:MM" (morning greetings only before 11:30)
+ *
+ * Slot hours (IST): morning_commute 06-11, midday_lunch 11-14, post_lunch_slump 14-16,
+ * afternoon_chai 16-18, evening_commute 18-20, dinner_chill 20-22, night_wind_down 22-06.
  */
 export const NOTIFICATION_VARIANT_POOLS = {
   morning_commute: [
-    { category: 'Relatable & Familiar', badge: 'Fresh Start', title: 'Good Morning! Fresh start ☀️', message: 'Starting your morning? Wake up your brain with a quick 2-minute win before the workday begins!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Commute Companion', title: 'Morning commute companion 🚇', message: 'On the road or metro? Pass your travel time with a quick casual Bingo victory.', url: '/bot' },
-    { category: 'Social Room', badge: 'Morning Focus', title: '{day} morning focus 🎯', message: 'Kick off your day on a winning note. Claim the first Bingo victory of the day!', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Chai & Toast', title: 'Chai, toast & one Bingo? ☕', message: 'The breakfast table is the best Bingo table. Finish your chai with a quick 5-line win!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Bot Warm-Up', title: 'Warm up before work 🔋', message: 'Before the emails pile up, beat the Bot in one rapid round and start the day sharp.', url: '/bot' },
-    { category: 'Social Room', badge: 'Office Rivals', title: 'Who wins before 11? 🏁', message: 'Challenge a colleague to a Bingo race before the first meeting. Loser buys the chai!', url: '/lobby' }
+    { category: 'Relatable & Familiar', badge: 'Chai First', title: 'Chai first, then one round ☕', message: 'Morning. Finish the chai, mark five lines, and walk into the day already winning.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Five More Minutes', title: 'Still in "5 more minutes" mode? 😴', message: 'Same. One quick round of Bingo wakes the brain faster than the third alarm.', url: '/bot' },
+    { category: 'Boredom Buster', badge: 'Traffic', title: 'Traffic again? 🚦', message: 'Stuck at the same signal as yesterday? Mark a few lines while the light makes up its mind.', url: '/bot', weekdayOnly: true },
+    { category: 'Boredom Buster', badge: 'Metro Mode', title: 'Metro mode on 🚇', message: 'Earphones in, phone out. A Bingo round makes the ride feel three stations shorter.', url: '/bot', weekdayOnly: true },
+    { category: 'Boredom Buster', badge: 'Before The Emails', title: 'Before the emails pile up 📬', message: 'One round before the first meeting. Beat the Bot and the day cannot touch you.', url: '/bot', weekdayOnly: true },
+    { category: 'Social Room', badge: 'Loser Buys Chai', title: 'Loser buys the chai ☕', message: 'One quick Bingo with a colleague before 11. The loser pays at the tea stall.', url: '/lobby', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Good Morning', title: 'Good morning, {day} 🌤️', message: 'New day, fresh card. Start it with a small win and a slightly smug smile.', url: '/lobby', notAfter: '11:30' },
+    { category: 'Relatable & Familiar', badge: 'Breakfast Table', title: 'Breakfast table Bingo 🍳', message: 'Poha, toast or leftover roti, it all pairs well with five quick lines.', url: '/lobby' },
+    { category: 'Social Room', badge: 'Say Good Morning', title: 'Say good morning properly 💛', message: 'Send a room code to the friend you only text on birthdays. Two minutes, no excuses.', url: '/lobby', notAfter: '11:30' },
+    { category: 'Boredom Buster', badge: 'Cocky Bot', title: 'The Bot woke up cocky 🤖', message: 'It says mornings belong to it. Show it who had their chai first.', url: '/bot' }
   ],
   midday_lunch: [
-    { category: 'Relatable & Familiar', badge: 'Lunch Break', title: 'Lunch break is here! 🍱', message: 'Done with lunch? Relax your mind for 2 minutes with a stress-free Bingo round.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Food Coma Fix', title: 'Beat the food coma! 🥱⚡', message: 'Feeling sluggish after lunch? A rapid numbers challenge will snap your brain right back!', url: '/bot' },
-    { category: 'Social Room', badge: 'Colleague Duel', title: 'Midday duel with colleagues ⚡', message: 'Sharing lunch? Challenge your friends or colleagues to a rapid 5-line Bingo match!', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Tiffin Time', title: 'Dabba done? Bingo next 🍛', message: 'Tiffin finished early? Spend the last 5 minutes of lunch on a satisfying Bingo win.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Power Round', title: 'Lunch hour power round 🎲', message: 'Trade one scroll session for one Bingo round. Five lines, two minutes, zero stress.', url: '/bot' },
-    { category: 'Social Room', badge: 'Canteen Showdown', title: 'Canteen table showdown 🥗', message: 'Everyone at the table has a phone. Start a private room and settle who is the lunch champion.', url: '/lobby' }
+    { category: 'Relatable & Familiar', badge: 'Dabba Time', title: 'Dabba open yet? 🍛', message: 'Lunch first, then one round. Five lines go down easier than the office dal.', url: '/lobby', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Lunch Break', title: 'Lunch break Bingo 🍱', message: 'Twenty minutes left of the break. Enough for one round and one more bite.', url: '/bot', weekdayOnly: true },
+    { category: 'Social Room', badge: 'Best Dabba', title: 'Whose dabba is the best? 🥘', message: 'Settle it fairly: share a room code, play one round, the winner gets the last paratha.', url: '/lobby', weekdayOnly: true },
+    { category: 'Social Room', badge: 'Canteen Table', title: 'Canteen table, phones out 📱', message: 'Everyone at the table has a phone anyway. One room, one round, one lunch champion.', url: '/lobby', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Half Day Done', title: 'Half the day done 🙌', message: 'Midday check-in. Mark five lines and the afternoon suddenly looks shorter.', url: '/lobby' },
+    { category: 'Boredom Buster', badge: 'Midday Reset', title: 'Midday reset 🔄', message: 'Two minutes away from the screen, then back sharper. The Bot is waiting.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Did You Eat', title: 'Mom asked if you ate 🍲', message: 'Say yes, eat properly, then play one calm round before the afternoon starts.', url: '/lobby' },
+    { category: 'Boredom Buster', badge: 'Hungry Bot', title: 'The Bot skipped lunch 🤖', message: 'It is hungry for a win. Feed it a loss in ninety seconds.', url: '/bot', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Exam Break', title: 'Exam break? 📚', message: 'Books down for five minutes. One round of Bingo, then back to chapter four.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Yawn Incoming', title: 'Afternoon yawn incoming 🥱', message: 'Beat it to the punch. One quick round before the sleepy part of the day starts.', url: '/bot' }
   ],
   post_lunch_slump: [
-    { category: 'Boredom Buster', badge: 'Slump Buster', title: '3 PM slump? Snap out of it ⚡', message: 'Eyes getting heavy after lunch? A quick Bingo round wakes the brain faster than coffee.', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Focus Reset', title: 'Two-minute afternoon reset 🔄', message: 'Between meetings? Reset your focus with one fast 5-line Bingo win and get back sharper.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Bot Challenge', title: 'Beat the Bot before 4 🤖', message: 'The Bot says afternoons are its best time. Prove it wrong in a 90-second solo match.', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Brain Fog', title: 'Post-lunch brain fog? 🌫️', message: 'Numbers are the cure. Mark five lines, clear the fog, and finish the afternoon strong.', url: '/bot' },
-    { category: 'Social Room', badge: 'Desk Break', title: 'Desk-side mini break 🪑', message: 'No need to leave your chair. Invite a teammate to a cozy room for the perfect afternoon micro-break.', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Quick Win', title: 'Afternoon quick win 🏅', message: 'Need a small victory today? A 5-line Bingo win is the quickest one you will find.', url: '/lobby' }
+    { category: 'Boredom Buster', badge: '3 PM Eyes', title: '3 PM eyes? 😵', message: 'Heavy eyelids, light brain. A fast Bingo round works better than the fourth coffee.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Between Meetings', title: 'Between two meetings? 📅', message: 'Just enough time for five lines. Back on the call looking suspiciously refreshed.', url: '/bot', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Sunday Nap', title: 'Afternoon nap or Bingo? 😴', message: 'Sunday afternoon rules: nap allowed, but only after you beat the Bot once.', url: '/bot', days: ['Sunday'] },
+    { category: 'Social Room', badge: 'Lazy Afternoon', title: 'Lazy {day} afternoon 🛋️', message: 'Nothing on the calendar, nowhere to be. Perfect conditions for a slow round with friends.', url: '/lobby', weekendOnly: true },
+    { category: 'Boredom Buster', badge: 'Spreadsheet Hypnosis', title: 'Spreadsheet hypnosis? 📊', message: 'Blink. Mark five lines. Return to the cells a new person.', url: '/bot', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Brain Fog', title: 'Afternoon brain fog 🌫️', message: 'Numbers are the cure. One quick card and the fog lifts, mostly.', url: '/bot' },
+    { category: 'Social Room', badge: 'Desk Break', title: 'Desk break, chair stays 🪑', message: 'No walk needed. Invite the person at the next desk to a two-minute room.', url: '/lobby', weekdayOnly: true },
+    { category: 'Boredom Buster', badge: 'Cocky Bot', title: 'The Bot is getting cocky 🤖', message: 'Three afternoon wins in a row, it claims. Someone needs to humble it.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Small Win', title: 'Small win needed? 🏅', message: 'Afternoons are long. A five-line Bingo is the quickest win on the market.', url: '/lobby' },
+    { category: 'Relatable & Familiar', badge: 'Exam Prep', title: 'Exam prep break 📖', message: 'Revision done for the hour? Two minutes of Bingo, then back to the notes.', url: '/bot' }
   ],
   afternoon_chai: [
-    { category: 'Relatable & Familiar', badge: 'Chai & Micro-Break', title: 'Chai time + Quick Bingo ☕', message: 'Steaming cup of tea in hand? Pair your evening chai break with an instant Bingo match!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Meeting Escape', title: 'Escape work meetings for 2 mins 🥱', message: 'Give your eyes a break from spreadsheets. Join a live room or challenge the Bot right now!', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Tea Recharge', title: 'Evening tea recharge 🍪', message: 'Your evening energy booster is here. Score 5 lines and claim a relaxing win!', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Chai & Micro-Break', title: 'Chai & Bingo Break? ☕', message: 'Tired of looking at work & screens? Take a quick 2-min chai break with a refreshing Bingo round!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Biscuit Combo', title: 'Biscuit, chai, Bingo 🍪', message: 'The perfect 5 PM combo. Dunk a biscuit, sip your chai, and mark five lines before it cools.', url: '/bot' },
-    { category: 'Social Room', badge: 'Team Tea Break', title: 'Tea break challenge 🏆', message: 'Chai break with the team? Open a private room and see who calls BINGO before the cups are empty.', url: '/lobby' }
+    { category: 'Relatable & Familiar', badge: 'Chai Time', title: 'Chai time ☕', message: 'Cup in one hand, phone in the other. Mark five lines before the chai goes cold.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Biscuit Combo', title: 'Biscuit, chai, Bingo 🍪', message: 'The holy afternoon trio. Dunk, sip, mark. Repeat until BINGO.', url: '/bot' },
+    { category: 'Social Room', badge: 'Tea Stall Gang', title: 'Tea stall gang, assemble 🫖', message: 'Chai break with the team? One private room decides who pays for the samosas.', url: '/lobby', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Last Stretch', title: 'Last stretch of the workday 🏁', message: 'A couple of hours to go. One round now makes the rest feel shorter, probably scientifically.', url: '/bot', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Evening Chai', title: 'Evening chai, five lines ☕', message: 'The sun is softer, the chai is hotter. Good moment for a calm round with the Bot.', url: '/bot' },
+    { category: 'Social Room', badge: 'Call Mom', title: 'Chai with mom? 📞', message: 'Call her while the water boils. Then one round of Bingo to celebrate the good deed.', url: '/lobby' },
+    { category: 'Relatable & Familiar', badge: 'Friday Chai', title: 'Friday chai hits different 🎉', message: 'End of the week, weekend two hours away. Warm up with a round before the plans begin.', url: '/lobby', days: ['Friday'] },
+    { category: 'Relatable & Familiar', badge: 'Cutting Chai', title: 'Cutting chai, full Bingo ☕', message: 'Half a cup of tea, a full card of numbers. Fair trade for the five o’clock slump.', url: '/bot' },
+    { category: 'Boredom Buster', badge: 'Bot On Chai', title: 'The Bot ordered chai too 🤖', message: 'It says it plays better after tea. Test that theory in one quick round.', url: '/bot' },
+    { category: 'Social Room', badge: 'Saturday Chai', title: 'Weekend chai, no rush 🫖', message: 'Nowhere to be tomorrow, no hurry today. A slow round with the family sounds right.', url: '/lobby', days: ['Saturday'] }
   ],
   evening_commute: [
-    { category: 'Boredom Buster', badge: 'Ride Home', title: 'Heading home? Play along 🚌', message: 'Stuck in traffic or on the metro? A quick Bingo round makes the ride home fly by.', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Day Done', title: 'Work done. Bingo on 🌇', message: 'Laptop closed, day finished. Celebrate with one relaxed 5-line win on the way home.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Traffic Buster', title: 'Signal-jam survival kit 🚦', message: 'Red light again? Beat the Bot in 90 seconds while the traffic sorts itself out.', url: '/bot' },
-    { category: 'Social Room', badge: 'Commute Race', title: 'Commute race with friends 🏁', message: 'Who reaches home first and who calls BINGO first? Start a room and find out tonight.', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Wrap-Up Win', title: 'Wrap-up win for {day} 📋', message: 'Before you log off completely, bank one small win. Five lines and you are done for the day.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Metro Mode', title: 'Metro mode: Bingo 🚇', message: 'Earphones in, phone out. One quick Bingo round is the best way to end the commute.', url: '/bot' }
+    { category: 'Boredom Buster', badge: 'Heading Home', title: 'Heading home? 🚌', message: 'Bus, metro or stuck at the signal, one round makes the ride home shorter.', url: '/bot', weekdayOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Laptop Shut', title: 'Laptop shut, Bingo open 💻', message: 'Work is done for today. Bank one small win before dinner plans take over.', url: '/bot', weekdayOnly: true },
+    { category: 'Social Room', badge: 'Friday Feeling', title: 'Friday feeling 🎉', message: 'End of the week, finally. Start the weekend with a round against friends.', url: '/lobby', days: ['Friday'] },
+    { category: 'Boredom Buster', badge: 'Signal Jam', title: 'Signal jam survival kit 🚦', message: 'Red light again? Beat the Bot in ninety seconds while the traffic sorts itself out.', url: '/bot', weekdayOnly: true },
+    { category: 'Social Room', badge: 'Call That Friend', title: 'Call that friend 💛', message: 'The one you keep meaning to call. Send a room code instead, it counts as catching up.', url: '/lobby' },
+    { category: 'Relatable & Familiar', badge: 'Evening Walk', title: 'Evening walk done? 🚶', message: 'Steps counted, sun setting. Reward yourself with five easy lines.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Sunset Round', title: 'Sunset round 🌇', message: 'Golden hour is better with a win. One calm card before the evening gets busy.', url: '/bot' },
+    { category: 'Social Room', badge: 'Friends Online', title: 'Weekend evening, friends free 🛋️', message: 'Everyone is around tonight. Drop a room code in the group and see who shows up.', url: '/lobby', weekendOnly: true },
+    { category: 'Boredom Buster', badge: 'Bot Clocked Out', title: 'The Bot clocked out early 🤖', message: 'It claims evenings are its best time. Nobody has checked. Be the one who checks.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Dinner Not Ready', title: 'Dinner is not ready yet 🍽️', message: 'Twenty minutes to kill before the food. Perfect length for a round.', url: '/bot' }
   ],
   dinner_chill: [
-    { category: 'Social Room', badge: 'Dinner Round', title: 'Having dinner or relaxing? 🍲', message: 'Relaxing after a long day? Share a room code with friends and play a fun dinner round!', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Couch Mode', title: 'Couch, dinner & Bingo 🛋️', message: 'Feet up after dinner? One cozy Bingo round with friends is the perfect way to unwind.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Bot Duel', title: 'Post-dinner Bot duel 🤖', message: 'Dinner done, dishes can wait. Take on the Pro Bot in a quick evening match.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Mom Is Calling', title: 'Mom is calling for dinner 🍲', message: 'Go eat first. Then come back for one cozy round, the dishes can wait.', url: '/lobby' },
+    { category: 'Social Room', badge: 'Feet Up', title: 'Dinner done, feet up 🛋️', message: 'Best part of the day. One relaxed round with friends before the show starts.', url: '/lobby' },
     { category: 'Social Room', badge: 'Family Night', title: 'Family Bingo night? 🏠', message: 'Everyone is home. Drop a room link in the family group and crown tonight’s champion.', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Evening Unwind', title: 'Evening unwind round 🌆', message: 'Trade one episode for one Bingo game. Five lines, zero stress, pure relaxation.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Dessert Round', title: 'Dessert round? 🍨', message: 'Something sweet after dinner? A quick Bingo win against the Bot tastes even better.', url: '/bot' }
+    { category: 'Relatable & Familiar', badge: 'Episode Or Round', title: 'One episode or one round? 📺', message: 'Trade a single episode for a single card. Same relaxation, more bragging rights.', url: '/bot' },
+    { category: 'Boredom Buster', badge: 'Dessert Round', title: 'Dessert round 🍨', message: 'Something sweet after dinner? A quick win over the Bot tastes even better.', url: '/bot' },
+    { category: 'Boredom Buster', badge: 'Dishes Can Wait', title: 'Dishes can wait 🍽️', message: 'They are not going anywhere. Five lines first, then the sink.', url: '/bot' },
+    { category: 'Social Room', badge: 'No Alarm Tomorrow', title: 'No alarm tomorrow 🌙', message: 'Nobody is sleepy yet. Start a room and let the whole gang play one more.', url: '/lobby', days: ['Friday', 'Saturday'] },
+    { category: 'Boredom Buster', badge: 'Bot Ate Too Much', title: 'The Bot ate too much 🤖', message: 'It is slow tonight, it says. Perfect time to steal a win.', url: '/bot' },
+    { category: 'Relatable & Familiar', badge: 'Long Day', title: 'Long day? 💛', message: 'You made it through. One calm round and a chat with a friend sounds about right.', url: '/lobby' },
+    { category: 'Social Room', badge: 'Sunday Night', title: 'Tomorrow is Monday 😬', message: 'Do not think about it yet. One Sunday night round with friends, then sleep.', url: '/lobby', days: ['Sunday'] }
   ],
   night_wind_down: [
-    { category: 'Relatable & Familiar', badge: 'Night Chill', title: 'Late night chill round 🌙', message: 'Wind down before sleep. Just one quick cozy game to end your day on a satisfying win!', url: '/lobby' },
-    { category: 'Social Room', badge: 'Night Owls', title: 'Night owl challenge 🦉', message: 'Still awake? The night lobbies are active. Can you win a 5-line Bingo before bed?', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Lights Out', title: 'One game before lights out 💤', message: 'Finish the day with a calm, quick Bingo round. Then it is sleep time, promise.', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Bedtime Scroll', title: 'Can’t sleep yet? 🌃', message: 'Scrolling in bed anyway? Make it count with a relaxing 5-line Bingo win.', url: '/bot' },
-    { category: 'Boredom Buster', badge: 'Bot Showdown', title: 'Midnight Bot showdown 🌙', message: 'The Bot never sleeps. Beat it once tonight and go to bed as the winner.', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Goodnight', title: 'Goodnight Bingo 🌛', message: 'A slow, cozy round is the perfect bedtime wind-down. One game and then lights off.', url: '/lobby' }
+    { category: 'Boredom Buster', badge: 'Lights Out', title: 'One game before lights out 💤', message: 'A calm, quick round to close the day. Then sleep, promise.', url: '/bot', notBefore: '21:30' },
+    { category: 'Relatable & Familiar', badge: 'Still Scrolling', title: 'Still scrolling? 🌃', message: 'Make the last scroll count. Five lines, one small win, then phone down.', url: '/bot', notBefore: '21:30' },
+    { category: 'Social Room', badge: 'Night Owls', title: 'Night owls, assemble 🦉', message: 'A few friends are still up. Start a quiet room and finish the day with a win.', url: '/lobby', notBefore: '21:30' },
+    { category: 'Relatable & Familiar', badge: 'Night Chill', title: 'Late night chill round 🌙', message: 'Lights low, volume lower. One slow card before bed.', url: '/lobby', notBefore: '21:30' },
+    { category: 'Relatable & Familiar', badge: 'Goodnight Almost', title: 'Goodnight, almost 🌛', message: 'One more round, and this time you mean it.', url: '/bot', notBefore: '21:30' },
+    { category: 'Boredom Buster', badge: 'Bot Never Sleeps', title: 'The Bot never sleeps 🤖', message: 'Beat it once tonight and go to bed as the winner. It will sulk till morning.', url: '/bot', notBefore: '21:30' },
+    { category: 'Relatable & Familiar', badge: 'Cannot Sleep', title: 'Can’t sleep yet? 🛏️', message: 'Numbers are oddly calming. Mark five lines and let the brain slow down.', url: '/bot', notBefore: '21:30' },
+    { category: 'Social Room', badge: 'Late Start Tomorrow', title: 'Weekend night, late start 🌙', message: 'Nobody has to wake up early. A relaxed round with friends, then bed whenever.', url: '/lobby', days: ['Friday', 'Saturday'], notBefore: '21:30' },
+    { category: 'Social Room', badge: 'Goodnight Text', title: 'Text a goodnight 💛', message: 'Send a room code with it. Two minutes of Bingo beats two hours of scrolling.', url: '/lobby', notBefore: '21:30' }
   ],
   generic: [
-    { category: 'Relatable & Familiar', badge: 'Quick Round', title: 'Two minutes to spare? 🎲', message: 'That is all a Bingo round takes. Mark five lines and get on with your day feeling great.', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Brain Recharge', title: 'Spreadsheets vs Bingo? 📊', message: 'Pause the boring work for 2 minutes. Can you beat the Pro Bot before someone pings on Slack?', url: '/bot' },
-    { category: 'Boredom Buster', badge: 'Bot Challenge', title: 'Can you beat Pro Bot in 90s? 🤖', message: 'The Bot claims it cannot be defeated today. Prove it wrong in a rapid solo match!', url: '/bot' },
-    { category: 'Relatable & Familiar', badge: 'Quick Reboot', title: '2-Minute Brain Reboot 🔋', message: 'Eyes tired from screens? Reset your focus with a quick, satisfying 5-line Bingo victory!', url: '/lobby' },
-    { category: 'Social Room', badge: 'Friends & Family', title: 'Who’s ready for Bingo? 🏆', message: 'Create a quick private room, share the code, and challenge your friends to a 5-line race!', url: '/lobby' },
-    { category: 'Relatable & Familiar', badge: 'Lucky Numbers', title: 'Your lucky numbers await 🍀', message: 'Feeling lucky today? Grab a card, mark your lines, and shout BINGO first.', url: '/lobby' }
+    { category: 'Relatable & Familiar', badge: 'Two Minutes', title: 'Two minutes to spare? 🎲', message: 'That is all a round takes. Five lines, one small win, back to life.', url: '/lobby' },
+    { category: 'Relatable & Familiar', badge: 'Lucky Numbers', title: 'Your lucky numbers are waiting 🍀', message: 'Grab a card, mark your lines, shout BINGO before anyone else.', url: '/lobby' },
+    { category: 'Boredom Buster', badge: 'Bot In 90 Seconds', title: 'Beat the Bot in 90 seconds? 🤖', message: 'It says it cannot be beaten today. It says that every day.', url: '/bot' },
+    { category: 'Social Room', badge: 'One Room One Winner', title: 'Friends, one room, one winner 🏆', message: 'Share the code, race to five lines, argue about it later.', url: '/lobby' },
+    { category: 'Relatable & Familiar', badge: 'Brain Reset', title: 'Quick brain reset 🔋', message: 'Eyes tired of the screen? Five calm lines and you are back.', url: '/bot' },
+    { category: 'Social Room', badge: 'Miss Someone', title: 'Miss someone? 💛', message: 'A room code is a nice excuse to say hi. Two minutes of Bingo, a lifetime of trash talk.', url: '/lobby' }
   ],
   weekend: [
-    { category: 'Relatable & Familiar', badge: 'Weekend Chill', title: '{day} Chill & Bingo 🛋️', message: 'Weekend mode is ON! Put your feet up, relax on the couch, and enjoy a peaceful Bingo game.', url: '/lobby' },
-    { category: 'Social Room', badge: 'Squad Showdown', title: 'Weekend Squad Showdown 🏅', message: 'Who in your squad is the real Bingo master? Start a private room and crown the champion!', url: '/lobby' },
-    { category: 'Social Room', badge: 'Relaxed Vibes', title: 'Relaxed {day} vibes ☕', message: 'Unwind and recharge before the week ahead. One cozy Bingo match with friends!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Lazy Duel', title: 'Lazy {day} Bot duel 🤖', message: 'No alarms, no meetings. Just you, a cup of chai, and the Pro Bot waiting to be beaten.', url: '/bot' },
-    { category: 'Social Room', badge: 'Family Room', title: 'Weekend family room 🏠', message: 'Everyone is home this weekend. Share a room code in the family group and play together!', url: '/lobby' },
-    { category: 'Boredom Buster', badge: 'Pick-Me-Up', title: 'Slow {day}, fast Bingo ⚡', message: 'Nothing on the schedule? A quick 5-line round is the perfect weekend pick-me-up.', url: '/bot' }
+    { category: 'Relatable & Familiar', badge: 'Slow Mode', title: '{day} mode: slow 🛋️', message: 'No alarms, no plans. Just a cup of chai and one lazy round.', url: '/bot', weekendOnly: true },
+    { category: 'Social Room', badge: 'Squad Showdown', title: 'Weekend squad showdown 🏅', message: 'Who in the group is the real Bingo master? One room, one round, settled.', url: '/lobby', weekendOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Sunday Nap Rules', title: 'Sunday afternoon nap rules 😴', message: 'Nap allowed only after one win against the Bot. House rules.', url: '/bot', days: ['Sunday'], notBefore: '13:00', notAfter: '17:00' },
+    { category: 'Social Room', badge: 'Family Room', title: 'Family room is open 🏠', message: 'Everyone is home this weekend. Share a room code in the family group and play together.', url: '/lobby', weekendOnly: true },
+    { category: 'Social Room', badge: 'No Plans', title: 'Saturday with no plans? 🙂', message: 'That is the best kind. One round with friends counts as a plan.', url: '/lobby', days: ['Saturday'] },
+    { category: 'Boredom Buster', badge: 'Lazy Duel', title: 'Lazy {day} Bot duel 🤖', message: 'The Bot is bored too. Give it a game and a reason to lose.', url: '/bot', weekendOnly: true },
+    { category: 'Social Room', badge: 'Call Home', title: 'Call home this weekend 💛', message: 'Then teach them Bingo over a room link. Grandparents are dangerously good at it.', url: '/lobby', weekendOnly: true },
+    { category: 'Boredom Buster', badge: 'Pick-Me-Up', title: 'Slow {day}, fast Bingo ⚡', message: 'Nothing on the schedule? A quick card is the perfect weekend pick-me-up.', url: '/bot', weekendOnly: true },
+    { category: 'Relatable & Familiar', badge: 'Weekend Chai', title: 'Weekend chai, extra sugar ☕', message: 'The good biscuits are out. Pair them with a round and a win.', url: '/bot', weekendOnly: true }
   ],
   festive: [
-    { category: 'Festive Banter', badge: 'Sweets & Bingo', title: 'Kaju Katli vs Pro Bot? 🍬', message: 'Festive sweets in one hand, Bingo card in the other! Can you score 5 lines before the sweets vanish?', url: '/bot' },
-    { category: 'Family Room', badge: 'Family Room', title: 'Family Bingo: {festival} 🎊', message: 'Drop your room link in your family WhatsApp group and find out who screams BINGO first!', url: '/lobby' },
-    { category: 'Family Room', badge: 'Festive Room', title: 'Festive room is open 🎉', message: 'Relatives over? Keep everyone entertained with a quick family Bingo round.', url: '/lobby' },
-    { category: 'Festive Banter', badge: 'Holiday Mode', title: 'Holiday mood, Bingo mode 🪔', message: 'Day off from work? Celebrate with a relaxed 5-line match and a plate of sweets.', url: '/bot' },
-    { category: 'Family Room', badge: 'Festive Champion', title: 'Festive champion challenge 🏆', message: 'Who in the family calls BINGO first this {festival}? Start a private room and find out.', url: '/lobby' }
+    { category: 'Festive Banter', badge: 'Sweets & Bingo', title: 'Kaju katli vs the Bot 🍬', message: 'Sweets in one hand, card in the other. Five lines before the box empties.', url: '/bot' },
+    { category: 'Family Room', badge: 'Family Room', title: '{festival} family Bingo 🎊', message: 'Drop a room link in the family group and find out who shouts BINGO first.', url: '/lobby' },
+    { category: 'Family Room', badge: 'Relatives Over', title: 'Relatives over? 🎉', message: 'Keep everyone busy and happy with one quick family round.', url: '/lobby' },
+    { category: 'Festive Banter', badge: 'Holiday Mode', title: 'Holiday mood, Bingo mode 🪔', message: 'Day off and a plate of sweets. Add one relaxed round and the picture is complete.', url: '/bot' },
+    { category: 'Family Room', badge: 'Festive Champion', title: '{festival} champion 🏆', message: 'Who in the family calls BINGO first today? Start a room and find out.', url: '/lobby' },
+    { category: 'Festive Banter', badge: 'Wishes & Match', title: 'Festive wishes, friendly match 🎊', message: 'Send your {festival} wishes with a room code. Celebrating together counts, even online.', url: '/lobby' }
+  ],
+  festive_eve: [
+    { category: 'Festive Banter', badge: 'Festival Tomorrow', title: '{festival} is tomorrow 🪔', message: 'Preparations done? Take a break with one calm round before the big day.', url: '/bot' },
+    { category: 'Family Room', badge: 'Festival Eve', title: 'Eve of {festival} 🎊', message: 'The house is nearly ready. One round with family while the sweets set.', url: '/lobby' },
+    { category: 'Festive Banter', badge: 'Early Wishes', title: 'Tomorrow is {festival} 🎉', message: 'Early wishes from us. Start the celebrations with a round against friends.', url: '/lobby' }
   ]
 };
+
+/** Hours (IST, [start, end) with end wrapping past midnight) in which each slot pool reads correctly. */
+export const SLOT_HOURS = {
+  morning_commute: [6, 11],
+  midday_lunch: [11, 14],
+  post_lunch_slump: [14, 16],
+  afternoon_chai: [16, 18],
+  evening_commute: [18, 20],
+  dinner_chill: [20, 22],
+  night_wind_down: [22, 30]
+};
+
+const EVENING_SLOTS = new Set(['evening_commute', 'dinner_chill', 'night_wind_down']);
+const COPY_LIMITS = { titleChars: 40, messageChars: 110, maxExclamations: 1, maxTitleEmojis: 1 };
+const BANNED_COPY_WORDS = [/\bboost/i, /\bengag/i, /\boptimi[sz]/i, /challenge hook/i, /\bAI\b/];
+const EMOJI_RE = /\p{Extended_Pictographic}/gu;
+const EMOJI_STRIP_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu;
+
+function clockToMinutes(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/**
+ * May this variant go out at `moment`? Day/time tags are evaluated for the moment
+ * the notification is received, which is what the rules above are written for.
+ */
+export function variantAllowedAt(variant, moment = {}) {
+  if (!variant) return false;
+  if (variant.weekdayOnly && moment.isWeekend) return false;
+  if (variant.weekendOnly && moment.isWeekend === false) return false;
+  if (Array.isArray(variant.days) && moment.dayName && !variant.days.includes(moment.dayName)) return false;
+  if (typeof moment.minuteOfDay === 'number') {
+    const nb = clockToMinutes(variant.notBefore);
+    const na = clockToMinutes(variant.notAfter);
+    if (nb !== null && moment.minuteOfDay < nb) return false;
+    if (na !== null && moment.minuteOfDay > na) return false;
+  }
+  return true;
+}
 
 function fillTemplate(text, vars = {}) {
   return String(text || '')
@@ -1028,6 +1177,56 @@ function fillTemplate(text, vars = {}) {
 /** Lowercase, strip emojis/punctuation so near-identical copies still match */
 function normalizeCopy(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function cleanFestivalName(specialDay) {
+  return (specialDay?.name || 'Festival').replace(EMOJI_STRIP_RE, '').trim() || 'Festive Greeting';
+}
+
+/** Lint one line against the copy rules; returns a list of problems (empty = fine). */
+export function lintCopy(title, message) {
+  const problems = [];
+  const t = String(title || '');
+  const m = String(message || '');
+  if ([...t].length > COPY_LIMITS.titleChars) problems.push(`title ${[...t].length} chars > ${COPY_LIMITS.titleChars}`);
+  if ([...m].length > COPY_LIMITS.messageChars) problems.push(`message ${[...m].length} chars > ${COPY_LIMITS.messageChars}`);
+  const bangs = (t.match(/!/g) || []).length + (m.match(/!/g) || []).length;
+  if (bangs > COPY_LIMITS.maxExclamations) problems.push(`${bangs} exclamation marks`);
+  const titleEmojis = (t.match(EMOJI_RE) || []).length;
+  if (titleEmojis > COPY_LIMITS.maxTitleEmojis) problems.push(`${titleEmojis} emojis in title`);
+  for (const re of BANNED_COPY_WORDS) {
+    if (re.test(t) || re.test(m)) problems.push(`banned wording ${re}`);
+  }
+  return problems;
+}
+
+/**
+ * Lint every pool variant (used by tests/scripts): limits, wording, tag sanity
+ * (weekend/weekday tags that contradict `days`, night wording outside its hours).
+ */
+export function validateVariantPools() {
+  const problems = [];
+  const weekendDays = new Set(['Saturday', 'Sunday']);
+  for (const [pool, list] of Object.entries(NOTIFICATION_VARIANT_POOLS)) {
+    for (const v of list) {
+      const where = `${pool} :: ${v.title}`;
+      for (const p of lintCopy(fillTemplate(v.title, { dayName: 'Wednesday', festivalName: 'Makar Sankranti & Pongal' }), fillTemplate(v.message, { dayName: 'Wednesday', festivalName: 'Makar Sankranti & Pongal' }))) {
+        problems.push(`${where}: ${p}`);
+      }
+      if (v.weekdayOnly && v.weekendOnly) problems.push(`${where}: both weekdayOnly and weekendOnly`);
+      if (Array.isArray(v.days)) {
+        if (v.weekdayOnly && v.days.some(d => weekendDays.has(d))) problems.push(`${where}: weekdayOnly but days include a weekend day`);
+        if (v.weekendOnly && v.days.some(d => !weekendDays.has(d))) problems.push(`${where}: weekendOnly but days include a weekday`);
+      }
+      if (pool === 'weekend' && !v.weekendOnly && !(Array.isArray(v.days) && v.days.every(d => weekendDays.has(d)))) problems.push(`${where}: weekend pool line without weekend tag`);
+      if (pool === 'night_wind_down' && clockToMinutes(v.notBefore) !== 21 * 60 + 30) problems.push(`${where}: late-night line must carry notBefore 21:30`);
+      if (/good morning/i.test(v.title + ' ' + v.message) && !(pool === 'morning_commute' && clockToMinutes(v.notAfter) !== null && clockToMinutes(v.notAfter) <= 11 * 60 + 30)) problems.push(`${where}: morning greeting without notAfter 11:30`);
+      if (/end of the week|friday/i.test(v.title + ' ' + v.message) && !(Array.isArray(v.days) && v.days.length === 1 && v.days[0] === 'Friday') && !(Array.isArray(v.days) && v.days.includes('Friday') && v.days.includes('Saturday'))) problems.push(`${where}: Friday wording not limited to Friday`);
+      if (/lunch|dabba|colleague|office|canteen|desk|meeting|workday|spreadsheet|commute|metro|emails/i.test(v.title + ' ' + v.message) && !v.weekdayOnly && !(Array.isArray(v.days) && v.days.every(d => !weekendDays.has(d)))) problems.push(`${where}: work/lunch wording without weekdayOnly`);
+      if (/late night|lights out|goodnight|bed\b/i.test(v.title + ' ' + v.message) && (clockToMinutes(v.notBefore) === null || clockToMinutes(v.notBefore) < 21 * 60 + 30)) problems.push(`${where}: late-night wording without notBefore 21:30`);
+    }
+  }
+  return problems;
 }
 
 /**
@@ -1101,14 +1300,14 @@ function dayNumberFromDateKey(dateKey) {
 
 /**
  * Pick one copy variant for a slot with anti-repetition:
- * 1. slot pool (+ weekend pool on weekends) minus anything in recent history / already chosen
+ * 1. slot pool (+ weekend pool on weekends, + festival-eve pool on an eve evening) minus
+ *    anything in recent history / already chosen / not allowed at this moment
  * 2. generic pool minus the same
- * 3. if everything was used recently, the least recently used variant
+ * 3. if everything was used recently, the least recently used allowed variant
  * Each pool is shuffled once with a fixed seed (per slot); the still-fresh variants
  * are then indexed by the target day number, so a slot cycles through all of its
  * variants on consecutive days instead of showing the same copy twice in a row.
- * The per-day seed (IST date + slot + index) is used when no date key is given
- * and to break ties in the least-recently-used fallback.
+ * `hour`/`minute` (IST, of the send moment) switch on the time-of-day tags.
  */
 export function selectNotificationVariant({
   slotKey,
@@ -1118,14 +1317,23 @@ export function selectNotificationVariant({
   recent = [],
   excludeTitles = new Set(),
   seed = '',
-  dateKey = ''
+  dateKey = '',
+  hour = null,
+  minute = 0,
+  includeFestivalEve = false
 }) {
   const rng = createSeededRandom(seed);
   const vars = { dayName, festivalName };
+  const moment = {
+    isWeekend,
+    dayName,
+    minuteOfDay: typeof hour === 'number' ? hour * 60 + (minute || 0) : null
+  };
   const slotPool = NOTIFICATION_VARIANT_POOLS[slotKey] || [];
-  const tier1 = isWeekend ? [...NOTIFICATION_VARIANT_POOLS.weekend, ...slotPool] : slotPool;
+  let tier1 = isWeekend ? [...NOTIFICATION_VARIANT_POOLS.weekend, ...slotPool] : slotPool;
+  if (includeFestivalEve && festivalName) tier1 = [...NOTIFICATION_VARIANT_POOLS.festive_eve, ...tier1];
   const tier2 = NOTIFICATION_VARIANT_POOLS.generic;
-  const notExcluded = (v) => !excludeTitles.has(normalizeCopy(fillTemplate(v.title, vars)));
+  const allowed = (v) => variantAllowedAt(v, moment) && !excludeTitles.has(normalizeCopy(fillTemplate(v.title, vars)));
   const dayNumber = dayNumberFromDateKey(dateKey);
 
   const tiers = [
@@ -1135,35 +1343,178 @@ export function selectNotificationVariant({
   for (const [tierName, tier] of tiers) {
     if (tier.length === 0) continue;
     const order = seededShuffle(tier, createSeededRandom(`${slotKey}|${tierName}|${isWeekend ? 'weekend' : 'weekday'}|order`));
-    const fresh = order.filter(v => notExcluded(v) && recencyRank(v, recent, vars) === -1);
+    const fresh = order.filter(v => allowed(v) && recencyRank(v, recent, vars) === -1);
     if (fresh.length === 0) continue;
     const index = dayNumber !== null ? dayNumber % fresh.length : Math.floor(rng() * fresh.length);
     return materializeVariant(fresh[index], vars);
   }
 
-  // Everything was sent recently: fall back to the least recently used variant
-  const all = seededShuffle([...tier1, ...tier2].filter(notExcluded), rng);
-  if (all.length === 0) return materializeVariant(tier2[0], vars);
+  // Everything was sent recently: fall back to the least recently used allowed variant
+  const all = seededShuffle([...tier1, ...tier2].filter(allowed), rng);
+  if (all.length === 0) return materializeVariant(tier2.find(v => variantAllowedAt(v, moment)) || tier2[0], vars);
   all.sort((a, b) => recencyRank(b, recent, vars) - recencyRank(a, recent, vars));
   return materializeVariant(all[0], vars);
 }
 
 function describeReasoning(copy, targetSlot, timeStr) {
   const tag = `${copy.category} ${copy.badge}`.toLowerCase();
-  if (copy.url === '/bot' || tag.includes('bot') || tag.includes('boredom') || tag.includes('challenge')) {
-    return `Humorous boredom buster & challenge hook for ${targetSlot.slotTitle} at ${timeStr}. Direct action boosts opens by +35%.`;
+  if (copy.url === '/bot' || tag.includes('bot') || tag.includes('boredom')) {
+    return `Solo round against the Bot, written for ${targetSlot.slotTitle} at ${timeStr}.`;
   }
   if (tag.includes('social') || tag.includes('room') || tag.includes('family') || tag.includes('squad')) {
-    return `Social multiplayer room invitation aligned with ${targetSlot.slotTitle} prime window at ${timeStr}.`;
+    return `Friends-room invite, written for ${targetSlot.slotTitle} at ${timeStr}.`;
   }
-  return `Matched to ${targetSlot.slotTitle} at ${timeStr}. High casual micro-break CTR.`;
+  return `Casual check-in, written for ${targetSlot.slotTitle} at ${timeStr}.`;
+}
+
+/** Template -> regex that matches the filled line (any {day}/{festival} value) */
+function templateMatcher(template) {
+  const raw = String(template || '').replace(/\{day\}|\{festival\}/g, '\u0001');
+  const pieces = raw.split('\u0001').map(p => normalizeCopy(p)).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${pieces.join('.*')}$`);
 }
 
 /**
- * Built-in Smart Semantic AI Synthesis Engine (100% Free, Offline, Zero Latency)
- * Produces unique, funny, casual, game-friendly copy with memory of past sent messages.
+ * Recognise engine copy. Returns { kind, poolKey, variant } when the title/message
+ * come from a pool or are a festival greeting, otherwise null (admin-written text).
+ */
+export function identifyEngineCopy(title, message = '') {
+  const t = normalizeCopy(title);
+  const m = normalizeCopy(message);
+  if (!t) return null;
+  for (const [poolKey, list] of Object.entries(NOTIFICATION_VARIANT_POOLS)) {
+    for (const v of list) {
+      if (templateMatcher(v.title).test(t) || (m && templateMatcher(v.message).test(m))) {
+        return { kind: poolKey === 'festive' ? 'festive' : poolKey === 'festive_eve' ? 'festival_eve' : 'slot', poolKey, variant: v };
+      }
+    }
+  }
+  const greetingTitles = [...Object.values(MULTI_YEAR_FESTIVALS), ...Object.values(FIXED_ANNUAL_HOLIDAYS)].map(f => normalizeCopy(f.greetingTitle));
+  if (greetingTitles.includes(t)) return { kind: 'festival_greeting', poolKey: null, variant: null };
+  return null;
+}
+
+/**
+ * Does this (engine) copy read correctly at `moment`? Admin-written copy returns
+ * { origin: 'admin', fits: true } because we cannot judge it. Checks the pool against
+ * the slot, the weekend/weekday/day/time tags, and that festival text is only used on
+ * the festival date (eve text only on the eve).
+ */
+export function assessCopyForMoment(title, message, moment) {
+  const found = identifyEngineCopy(title, message);
+  if (!found) return { origin: 'admin', fits: true, reason: null };
+  const m = moment || getMomentContext(Date.now());
+  const fail = (reason) => ({ origin: 'engine', fits: false, kind: found.kind, poolKey: found.poolKey, reason });
+  if (found.kind === 'festival_greeting') {
+    if (!m.specialDay) return fail('festival greeting but the send date is not a festival');
+    if (normalizeCopy(m.specialDay.greetingTitle) !== normalizeCopy(title)) return fail(`greeting is for another festival than ${m.specialDay.name}`);
+    return { origin: 'engine', fits: true, kind: found.kind, poolKey: null, reason: null };
+  }
+  if (found.kind === 'festive' && !m.specialDay) return fail('festive banter but the send date is not a festival');
+  if (found.kind === 'festival_eve' && !(m.eveOf && !m.specialDay)) return fail('festival-eve text but the send date is not a festival eve');
+  if (found.poolKey === 'weekend' && !m.isWeekend) return fail('weekend wording on a weekday');
+  if (SLOT_HOURS[found.poolKey] && found.poolKey !== m.slotKey) return fail(`${found.poolKey} wording in the ${m.slotKey} slot`);
+  if (!variantAllowedAt(found.variant, m)) return fail(`line is not allowed on ${m.dayName} at ${m.istTimeString}`);
+  return { origin: 'engine', fits: true, kind: found.kind, poolKey: found.poolKey, reason: null };
+}
+
+/**
+ * Compose the notification for ONE send moment. This is the single place that turns
+ * a target time into copy; the suggestion generator, the scheduler and the dispatch-time
+ * guard all go through it, so the text always belongs to the moment it is received in.
+ * Festival handling is unchanged: greeting (existing wish text) once per festival date,
+ * then festive banter; both only when the TARGET date is the festival.
+ */
+export function composeNotificationForMoment({
+  ms,
+  recent = [],
+  excludeTitles = new Set(),
+  greetedDates = new Set(),
+  index = 0
+}) {
+  const m = getMomentContext(ms);
+  const targetSlot = { slotKey: m.slotKey, slotTitle: m.slotTitle, slotIcon: m.slotIcon };
+  const scheduledTimeStr = formatTimeIST(ms, false);
+
+  let copy;
+  let reasoning;
+  let copyKind = 'slot';
+  let festivalKey = null;
+  if (m.specialDay) {
+    const festivalName = cleanFestivalName(m.specialDay);
+    const greetingTitle = m.specialDay.greetingTitle || `${m.specialDay.name} Wishes! 🪔`;
+    const greetingAlreadySent = recent.some(r => r.title === normalizeCopy(greetingTitle));
+    festivalKey = m.dateKey;
+    if (!greetedDates.has(m.dateKey) && !greetingAlreadySent && !excludeTitles.has(normalizeCopy(greetingTitle))) {
+      greetedDates.add(m.dateKey);
+      copyKind = 'festival_greeting';
+      copy = {
+        category: 'Festive Greeting',
+        badge: festivalName,
+        title: greetingTitle,
+        message: `${m.specialDay.wish} Celebrate with family & friends over a festive Bingo match!`,
+        url: '/lobby'
+      };
+      reasoning = `Festive greeting for ${m.specialDay.name}, sent on the festival date itself.`;
+    } else {
+      copyKind = 'festive';
+      copy = selectNotificationVariant({
+        slotKey: 'festive',
+        isWeekend: false,
+        dayName: m.dayName,
+        festivalName,
+        recent,
+        excludeTitles,
+        seed: `${m.dateKey}|festive|${index}`,
+        dateKey: m.dateKey,
+        hour: m.hour,
+        minute: m.minute
+      });
+      reasoning = `Festive banter for ${m.specialDay.name} in the ${m.slotTitle} window at ${scheduledTimeStr}.`;
+    }
+  } else {
+    const isEveEvening = Boolean(m.eveOf) && EVENING_SLOTS.has(m.slotKey);
+    copy = selectNotificationVariant({
+      slotKey: m.slotKey,
+      isWeekend: m.isWeekend,
+      dayName: m.dayName,
+      festivalName: isEveEvening ? cleanFestivalName(m.eveOf) : '',
+      includeFestivalEve: isEveEvening,
+      recent,
+      excludeTitles,
+      seed: `${m.dateKey}|${m.slotKey}|${index}`,
+      dateKey: m.dateKey,
+      hour: m.hour,
+      minute: m.minute
+    });
+    const found = identifyEngineCopy(copy.title, copy.message);
+    if (found && found.kind === 'festival_eve') {
+      copyKind = 'festival_eve';
+      festivalKey = m.nextDateKey;
+      reasoning = `Festival-eve note for ${m.eveOf.name} (tomorrow) in the ${m.slotTitle} window at ${scheduledTimeStr}.`;
+    } else {
+      reasoning = describeReasoning(copy, targetSlot, scheduledTimeStr);
+    }
+  }
+
+  return {
+    ...copy,
+    reasoning,
+    slotKey: m.slotKey,
+    slotTitle: m.slotTitle,
+    slotIcon: m.slotIcon,
+    targetDateKey: m.dateKey,
+    targetDayName: m.dayName,
+    isWeekend: m.isWeekend,
+    copyKind,
+    festivalKey
+  };
+}
+
+/**
+ * Built-in copy engine (offline, zero latency).
  * Each of the three suggestions targets a different send window (different slot) and
- * draws its copy from that slot's variant pool, skipping anything sent recently.
+ * its copy is composed for THAT window's moment, skipping anything sent recently.
  */
 export function generateHeuristicSuggestions(context, stats = {}, historyData = {}, options = {}) {
   const windows = Array.isArray(options.windows) && options.windows.length > 0
@@ -1177,70 +1528,13 @@ export function generateHeuristicSuggestions(context, stats = {}, historyData = 
   for (let i = 0; i < 3; i++) {
     const win = windows[Math.min(i, windows.length - 1)];
     const triggerTimeMs = win.ms;
-
-    const scheduledTimeStr = formatTimeIST(triggerTimeMs, false);
-    const scheduledTimeWithZone = formatTimeIST(triggerTimeMs, true);
-    const scheduledDateStr = formatDateIST(triggerTimeMs);
-
-    // Everything about the copy is derived from the TARGET trigger date/time, never from "now",
-    // so weekday names and slot moods strictly match the scheduled moment.
-    const targetIST = new Date(triggerTimeMs + IST_OFFSET_MS);
-    const targetSlot = getSlotForHour(targetIST.getUTCHours());
-    const targetDayIndex = targetIST.getUTCDay();
-    const dayName = DAY_NAMES[targetDayIndex];
-    const isWeekend = targetDayIndex === 0 || targetDayIndex === 6;
-    const specialDay = detectSpecialOccasion(triggerTimeMs);
-    const dateKey = getIstDateKey(triggerTimeMs);
-
-    let copy;
-    let reasoning;
-    if (specialDay) {
-      const cleanFestivalName = (specialDay.name || 'Festival').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim() || 'Festive Greeting';
-      const greetingTitle = specialDay.greetingTitle || `${specialDay.name} Wishes! 🪔`;
-      const greetingAlreadySent = recent.some(r => r.title === normalizeCopy(greetingTitle));
-      if (!greetedDates.has(dateKey) && !greetingAlreadySent) {
-        greetedDates.add(dateKey);
-        copy = {
-          category: 'Festive Greeting',
-          badge: cleanFestivalName,
-          title: greetingTitle,
-          message: `${specialDay.wish} Celebrate with family & friends over a festive Bingo match!`,
-          url: '/lobby'
-        };
-        reasoning = `Festive greeting for ${specialDay.name}. Warm cultural wish boosts open rate by +55%.`;
-      } else {
-        copy = selectNotificationVariant({
-          slotKey: 'festive',
-          isWeekend: false,
-          dayName,
-          festivalName: cleanFestivalName,
-          recent,
-          excludeTitles: chosenTitles,
-          seed: `${dateKey}|festive|${i}`,
-          dateKey
-        });
-        reasoning = `Festive banter for ${specialDay.name} in the ${targetSlot.slotTitle} window at ${scheduledTimeStr}.`;
-      }
-    } else {
-      copy = selectNotificationVariant({
-        slotKey: targetSlot.slotKey,
-        isWeekend,
-        dayName,
-        recent,
-        excludeTitles: chosenTitles,
-        seed: `${dateKey}|${targetSlot.slotKey}|${i}`,
-        dateKey
-      });
-      reasoning = describeReasoning(copy, targetSlot, scheduledTimeStr);
-    }
-
-    chosenTitles.add(normalizeCopy(copy.title));
+    const composed = composeNotificationForMoment({ ms: triggerTimeMs, recent, excludeTitles: chosenTitles, greetedDates, index: i });
+    chosenTitles.add(normalizeCopy(composed.title));
     suggestions.push({
       id: `ai_sug_${i + 1}`,
-      ...copy,
+      ...composed,
       scheduledAt: triggerTimeMs,
-      scheduledAtDesc: `${scheduledDateStr} at ${scheduledTimeWithZone}`,
-      reasoning
+      scheduledAtDesc: `${formatDateIST(triggerTimeMs)} at ${formatTimeIST(triggerTimeMs, true)}`
     });
   }
 
@@ -1271,8 +1565,9 @@ function extractJsonFromText(rawText) {
 
 /**
  * Call Google Gemini LLM API (Free Tier) when key is available
- * Grounded with live web search awareness, sent history memory (last ~10 sends), 2-hour buffer,
- * and one distinct send window per suggestion.
+ * Grounded with live festival awareness per window, sent history memory (last ~10 sends),
+ * 2-hour buffer, one distinct send window per suggestion and the same wording rules
+ * as the built-in pools. Suggestion N is written for window N's moment.
  */
 async function callGeminiApi({ apiKey, context, stats, historyData = {}, windows = null }) {
   if (!apiKey) return null;
@@ -1281,21 +1576,13 @@ async function callGeminiApi({ apiKey, context, stats, historyData = {}, windows
     ? windows
     : pickSpreadTriggerWindows(context, { count: 3 });
   const primary = targetWindows[0];
-  const triggerTimeMs = primary.ms;
-  const targetDateObj = new Date(triggerTimeMs);
-  const targetTimeString = formatTimeIST(triggerTimeMs, true);
-  const targetDateString = formatDateIST(triggerTimeMs);
-
-  const targetIST = new Date(triggerTimeMs + IST_OFFSET_MS);
-  const targetSlot = getSlotForHour(targetIST.getUTCHours());
-  const detectedFestival = detectSpecialOccasion(targetDateObj);
-  const targetDayName = DAY_NAMES[targetIST.getUTCDay()];
+  const primaryMoment = getMomentContext(primary.ms);
 
   const describeWindow = (w, idx) => {
-    const ist = new Date(w.ms + IST_OFFSET_MS);
-    const slot = getSlotForHour(ist.getUTCHours());
-    const fest = detectSpecialOccasion(w.ms);
-    return `  ${idx + 1}. ${formatDateIST(w.ms)} (${DAY_NAMES[ist.getUTCDay()]}) at ${formatTimeIST(w.ms, true)} - ${slot.slotTitle} (${slot.slotKey})${fest ? ` - Festival: ${fest.name}` : ''}`;
+    const m = getMomentContext(w.ms);
+    const fest = m.specialDay ? ` - FESTIVAL on this date: ${m.specialDay.name} (${m.specialDay.wish})` : '';
+    const eve = !m.specialDay && m.eveOf ? ` - Eve of ${m.eveOf.name} (tomorrow)` : '';
+    return `  ${idx + 1}. ${m.istDateString} (${m.dayName}, ${m.isWeekend ? 'WEEKEND' : 'weekday'}) at ${m.istTimeString} - slot: ${m.slotTitle} (${m.slotKey})${fest}${eve}`;
   };
   const windowsSummary = targetWindows.slice(0, 3).map(describeWindow).join('\n');
 
@@ -1310,16 +1597,14 @@ async function callGeminiApi({ apiKey, context, stats, historyData = {}, windows
     : 'No recent history.';
 
   const prompt = `
-You are an expert casual gaming community copywriter for "Bingo Online" (a free, real-time multiplayer 5x5 Bingo web app with bot mode and private friend rooms).
+You write push notifications for "Bingo Online" (a free, real-time multiplayer 5x5 Bingo web app with a bot mode and private friend rooms). The audience is in India. Write like a friend texting, not like a brand.
 
 Live Context:
 - Current Indian Date & Day: ${context.istDateString} (${context.dayName})
-- Current Indian Time: ${context.istTimeString} IST
-- Primary Target Trigger Date & Day: ${targetDateString} (${targetDayName})
-- Primary Target Trigger Time: ${targetTimeString} IST (Strictly 2+ hours in advance)
-- Primary Target Slot: ${targetSlot.slotTitle} (${targetSlot.slotKey})
-- Detected Indian Festival / Occasion on Primary Target Date: ${detectedFestival ? `${detectedFestival.name} (${detectedFestival.wish})` : 'Regular day'}
-- Target Send Windows (suggestion N is sent in window N):
+- Current Indian Time: ${context.istTimeString}
+- Primary Target: ${primaryMoment.istDateString} (${primaryMoment.dayName}) at ${primaryMoment.istTimeString} - ${primaryMoment.slotTitle} (${primaryMoment.slotKey})
+- Festival on the primary target date: ${primaryMoment.specialDay ? `${primaryMoment.specialDay.name} (${primaryMoment.specialDay.wish})` : 'Regular day'}
+- Target Send Windows (suggestion N is RECEIVED in window N; write each one for that exact moment):
 ${windowsSummary}
 - Today's Messages Already Sent:
 ${sentSummary}
@@ -1327,40 +1612,19 @@ ${sentSummary}
 ${recentSummary}
 
 STRICT INSTRUCTIONS:
-1. LIVE FESTIVAL & EVENT AWARENESS: First analyze whether each target window's date has any festival (e.g. Diwali, Dhanteras, Chhath Puja, Bhai Dooj, Eid, Holi, Christmas, Independence Day, etc.) or major sports event. If yes and the window is in the morning/day, lead with an authentic, warm, heartfelt festival greeting & wish.
-2. ANTI-REPETITION MANDATE: Do NOT reuse, paraphrase, or mimic ANY title, message, hook, or joke from the "Today's Messages Already Sent" and "Recently Sent Or Already Queued" lists above. Every title and message must be 100% new, fresh, funny, casual, game-friendly, and attractive. The three suggestions must also differ clearly from each other.
-3. TARGET TIME & DAY OF THE WEEK ACCURACY: Suggestion N MUST match the time of day, mood, and weekday of Target Send Window N (e.g. a lunch window gets lunch copy, an evening window gets evening copy). If you mention any day of the week in a title or message, it MUST be that window's weekday, NEVER today's day (${context.dayName}) unless they are the same.
-4. STRICTLY NO APP SIGNATURE OR WATERMARK: Do NOT append any signature, app name, company signature, watermark, or 'AI generated' suffix in the title or message (such as "- Bingo", "~ Bingo App", "- Team Bingo", "Sent via Bingo", "Crafted by AI", etc.). The message MUST end naturally without any signature.
-5. CONSTRAINTS: Title under 40 characters. Message under 120 characters. Include 1-2 lively emojis in both title and message.
+1. MOMENT ACCURACY: Suggestion N must read correctly at the time, weekday and date of window N. Lunch copy only in the lunch slot, dinner copy only in the dinner slot, late-night wording only after 21:30, morning greetings only before 11:30. No lunch/colleague/office/commute wording on a Saturday or Sunday; no weekend wording on a weekday. "End of the week" / "Friday feeling" only when the window is on a Friday. Any weekday you mention must be the window's weekday, never today's.
+2. FESTIVALS: If a window's date is marked FESTIVAL, lead that suggestion with a warm, authentic greeting for that festival. Festival-eve wording only for a window marked as an eve. Never greet a festival on any other date.
+3. ANTI-REPETITION: Do not reuse, paraphrase or mimic any title, message or joke in the two history lists above. The three suggestions must also clearly differ from each other.
+4. VOICE: Warm, natural, lightly funny, Indian everyday context (chai, dabba, traffic, "5 more minutes", mom calling for dinner, Sunday naps, exam breaks). Plain words. Do NOT use: boost, engage, optimize, challenge hook, AI, or any marketing phrasing. At most ONE exclamation mark per message (title + body together). No signature, app name or watermark at the end.
+5. FORMAT: Title at most 40 characters with at most one emoji. Body at most 110 characters, plain text.
 
 Return STRICTLY a JSON object matching this schema:
 {
-  "webAnalysisNotes": "Brief 1-sentence note of detected festival / situation for today",
+  "webAnalysisNotes": "One short sentence about the detected festival / situation",
   "suggestions": [
-    {
-      "category": "Festive Greeting or Casual Comedy",
-      "badge": "...",
-      "title": "...",
-      "message": "...",
-      "url": "/lobby",
-      "reasoning": "..."
-    },
-    {
-      "category": "Boredom Buster / Bot Challenge",
-      "badge": "...",
-      "title": "...",
-      "message": "...",
-      "url": "/bot",
-      "reasoning": "..."
-    },
-    {
-      "category": "Social & Relaxation",
-      "badge": "...",
-      "title": "...",
-      "message": "...",
-      "url": "/lobby",
-      "reasoning": "..."
-    }
+    { "category": "Festive Greeting or Relatable & Familiar", "badge": "...", "title": "...", "message": "...", "url": "/lobby", "reasoning": "..." },
+    { "category": "Boredom Buster", "badge": "...", "title": "...", "message": "...", "url": "/bot", "reasoning": "..." },
+    { "category": "Social Room", "badge": "...", "title": "...", "message": "...", "url": "/lobby", "reasoning": "..." }
   ]
 }
 `.trim();
@@ -1400,17 +1664,32 @@ Return STRICTLY a JSON object matching this schema:
       const parsed = extractJsonFromText(candidateText);
       if (!parsed || !Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) continue;
 
+      const recent = collectRecentSentCopy(historyData);
+      const chosenTitles = new Set();
+      const greetedDates = new Set();
       return {
-        webAnalysisNotes: parsed.webAnalysisNotes || (detectedFestival ? `Live calendar match: ${detectedFestival.name}` : `Standard active day in ${targetDayName}`),
-        suggestions: parsed.suggestions.map((s, idx) => {
+        webAnalysisNotes: parsed.webAnalysisNotes || (primaryMoment.specialDay ? `Live calendar match: ${primaryMoment.specialDay.name}` : `Regular ${primaryMoment.dayName}`),
+        suggestions: parsed.suggestions.slice(0, 3).map((s, idx) => {
           const win = targetWindows[Math.min(idx, targetWindows.length - 1)];
-          const winIST = new Date(win.ms + IST_OFFSET_MS);
-          const winSlot = getSlotForHour(winIST.getUTCHours());
+          const m = getMomentContext(win.ms);
           const winTimeString = formatTimeIST(win.ms, true);
           const winDateString = formatDateIST(win.ms);
-          let cleanTitle = (s.title || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
-          let cleanMessage = (s.message || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
-          let cleanBadge = (s.badge || 'Smart Match').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim();
+          const cleanTitle = (s.title || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
+          const cleanMessage = (s.message || '').replace(/\s*[-–—~]\s*(Bingo|Team Bingo|Bingo App|Bingo Online)\.?$/i, '').trim();
+          const cleanBadge = (s.badge || 'Smart Match').replace(EMOJI_STRIP_RE, '').trim();
+          const problems = lintCopy(cleanTitle, cleanMessage);
+          if (!cleanTitle || !cleanMessage || problems.length > 0) {
+            // Model text broke the rules: use the built-in copy for this exact window instead
+            const composed = composeNotificationForMoment({ ms: win.ms, recent, excludeTitles: chosenTitles, greetedDates, index: idx });
+            chosenTitles.add(normalizeCopy(composed.title));
+            return {
+              id: `sug_${idx + 1}`,
+              ...composed,
+              scheduledAt: win.ms,
+              scheduledAtDesc: `${winDateString} at ${winTimeString}`
+            };
+          }
+          chosenTitles.add(normalizeCopy(cleanTitle));
           return {
             id: `sug_${idx + 1}`,
             category: s.category || 'Suggested Campaign',
@@ -1422,7 +1701,15 @@ Return STRICTLY a JSON object matching this schema:
             scheduledAtDesc: `${winDateString} at ${winTimeString}`,
             reasoning: s.reasoning
               ? s.reasoning.replace(/Crafted by Gemini AI for/gi, 'Suggested for').replace(/Gemini AI/gi, 'Automated scheduler')
-              : `Scheduled for ${winTimeString} (${winSlot.slotTitle}).`
+              : `Scheduled for ${winTimeString} (${m.slotTitle}).`,
+            slotKey: m.slotKey,
+            slotTitle: m.slotTitle,
+            slotIcon: m.slotIcon,
+            targetDateKey: m.dateKey,
+            targetDayName: m.dayName,
+            isWeekend: m.isWeekend,
+            copyKind: m.specialDay ? 'festive' : 'slot',
+            festivalKey: m.specialDay ? m.dateKey : null
           };
         })
       };
@@ -1435,29 +1722,23 @@ Return STRICTLY a JSON object matching this schema:
 }
 
 /**
- * Main Entry Point: Generate AI-grounded notification suggestions
- * 100% Free: Uses Gemini free tier if key provided (via process.env.GEMINI_API_KEY or param),
- * otherwise uses built-in smart AI engine!
+ * Main Entry Point: Generate notification suggestions
+ * Uses Gemini free tier if a key is provided (via process.env.GEMINI_API_KEY or param),
+ * otherwise the built-in copy engine.
  * Options: preferredSlotKey (auto-pilot rotation), now (ms override for testing)
  */
 export async function generateSmartNotificationCampaign({ stats = {}, historyData = {}, apiKey = null, preferredSlotKey = null, now = null } = {}) {
   const context = getContextualMatrix(typeof now === 'number' ? new Date(now) : new Date());
   const windows = pickSpreadTriggerWindows(context, { count: 3, preferredSlotKey: preferredSlotKey || undefined });
   const triggerTimeMs = windows[0].ms;
-  const targetDateObj = new Date(triggerTimeMs);
+  const target = getMomentContext(triggerTimeMs);
 
-  const targetDateString = formatDateIST(triggerTimeMs);
-  const targetTimeString = formatTimeIST(triggerTimeMs, true);
-
-  const targetIST = new Date(triggerTimeMs + IST_OFFSET_MS);
-  const targetSlot = getSlotForHour(targetIST.getUTCHours());
-
-  // Derive target trigger date's day of week & weekend status
-  const targetDayIndex = targetIST.getUTCDay();
-  const targetDayName = DAY_NAMES[targetDayIndex];
-  const targetIsWeekend = targetDayIndex === 0 || targetDayIndex === 6;
-
-  const detectedFestival = detectSpecialOccasion(targetDateObj);
+  const targetDateString = target.istDateString;
+  const targetTimeString = target.istTimeString;
+  const targetSlot = { slotKey: target.slotKey, slotTitle: target.slotTitle, slotIcon: target.slotIcon };
+  const targetDayName = target.dayName;
+  const targetIsWeekend = target.isWeekend;
+  const detectedFestival = target.specialDay;
 
   // Run predictive probability modeling
   const predictions = analyzeNotificationPacingAndProbabilities({
@@ -1471,7 +1752,7 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
   let webAnalysisNotes = detectedFestival
     ? `Live festive match: ${detectedFestival.name}. Morning wishes & celebration recommended.`
     : `Target slot is ${targetSlot.slotTitle}. Minimum 2-hour safety review buffer active.`;
-  let engineUsed = 'Built-in Smart Semantic AI (100% Free & Offline)';
+  let engineUsed = 'Built-in copy engine (offline)';
 
   // Try Gemini if API key is configured
   const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
@@ -1490,7 +1771,7 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
     }
   }
 
-  // Fallback to high-fidelity built-in engine
+  // Fallback to the built-in engine
   if (!suggestions) {
     suggestions = generateHeuristicSuggestions(context, stats, historyData, { windows });
   }
@@ -1523,4 +1804,61 @@ export async function generateSmartNotificationCampaign({ stats = {}, historyDat
     engineUsed,
     suggestions
   };
+}
+
+/**
+ * DISPATCH-TIME GUARD (pure decision, applied by the scheduler just before sending).
+ * Looks at the ACTUAL current IST moment, not the moment the item was written for:
+ *   - already sent / processing / cancelled  -> ignore
+ *   - not due yet                             -> wait
+ *   - more than MAX_LATE_DISPATCH_MS late     -> skip (server slept or restarted)
+ *   - inside the quiet hours                  -> defer to the next 08:30 IST
+ *   - engine copy that no longer fits the slot/date -> retext (fresh variant for now)
+ *   - otherwise                               -> send
+ */
+export function evaluateScheduledDispatch(item, nowMs = Date.now()) {
+  if (!item || item.status !== 'pending') return { action: 'ignore', reason: 'not pending' };
+  const scheduledAt = Number(item.scheduledAt);
+  if (!Number.isFinite(scheduledAt) || nowMs < scheduledAt) return { action: 'wait', reason: 'not due yet' };
+
+  const lateMs = nowMs - scheduledAt;
+  const lateMinutes = Math.round(lateMs / 60000);
+  if (lateMs > MAX_LATE_DISPATCH_MS) {
+    return {
+      action: 'skip',
+      lateMinutes,
+      reason: `Skipped: ${lateMinutes} minutes late (server was asleep or restarted). It was written for ${formatDateIST(scheduledAt)} at ${formatTimeIST(scheduledAt, true)}.`
+    };
+  }
+
+  if (isQuietHoursIST(nowMs)) {
+    const deferToMs = nextAllowedSendTime(nowMs);
+    return {
+      action: 'defer',
+      lateMinutes,
+      deferToMs,
+      reason: `Quiet hours (23:00-08:00 IST): moved to ${formatDateIST(deferToMs)} at ${formatTimeIST(deferToMs, true)}.`
+    };
+  }
+
+  const moment = getMomentContext(nowMs);
+  const mismatches = [];
+  if (item.slotKey && item.slotKey !== moment.slotKey) mismatches.push(`written for ${item.slotKey}, now ${moment.slotKey}`);
+  if (item.targetDateKey && item.targetDateKey !== moment.dateKey) mismatches.push(`written for ${item.targetDateKey}, now ${moment.dateKey}`);
+  if (item.festivalKey) {
+    const expected = item.copyKind === 'festival_eve' ? moment.nextDateKey : moment.dateKey;
+    if (item.festivalKey !== expected) mismatches.push(`festival text for ${item.festivalKey}`);
+  }
+  const fit = assessCopyForMoment(item.title, item.message, moment);
+  if (!fit.fits && fit.reason) mismatches.push(fit.reason);
+
+  if (mismatches.length > 0) {
+    // Auto-pilot items are always engine text, even when written by an older pool
+    if (fit.origin === 'engine' || item.copyOrigin === 'engine') {
+      return { action: 'retext', lateMinutes, moment, reason: `Re-texted for ${moment.slotTitle} on ${moment.dayName}: ${mismatches.join('; ')}.` };
+    }
+    // Admin-written text: we cannot rewrite it, send as is but say why nothing changed
+    return { action: 'send', lateMinutes, moment, note: `Admin-written text kept although ${mismatches.join('; ')}.` };
+  }
+  return { action: 'send', lateMinutes, moment };
 }

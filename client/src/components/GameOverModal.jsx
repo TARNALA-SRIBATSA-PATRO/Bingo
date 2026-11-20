@@ -8,8 +8,19 @@ import { playSfx } from '../utils/sfx';
 import './GameOverModal.css';
 
 export default function GameOverModal() {
-  const { gameOver, isCreator, replayGame, actualLeaveRoom, roomData, playerId } = useGame();
+  const { gameOver, isCreator, replayGame, actualLeaveRoom, roomData, playerId, showNotif } = useGame();
   const [showBotBoard, setShowBotBoard] = useState(false);
+  // Next round is sent once; the button waits for the answer so a second tap cannot follow.
+  const [replayPending, setReplayPending] = useState(false);
+
+  const handleNextRound = () => {
+    if (replayPending) return;
+    setReplayPending(true);
+    replayGame((res) => {
+      setReplayPending(false);
+      if (res && !res.success && res.error) showNotif(res.error, 'error');
+    });
+  };
 
   // One sound when the result appears.
   useEffect(() => {
@@ -20,29 +31,30 @@ export default function GameOverModal() {
     playSfx(won ? 'win' : draw ? 'line' : 'lose');
   }, [gameOver, playerId]);
 
-  if (!gameOver) return null;
-
   const isBot = Boolean(roomData?.isBot);
   const botPlayer = roomData?.players?.find(p => p.id === 'bot-opponent');
-  const botBoard = gameOver.botBoard || botPlayer?.board || [];
+  const botBoard = gameOver?.botBoard || botPlayer?.board || [];
 
-  const allCalled = gameOver.calledNumbers || roomData?.calledNumbers || [];
-  const lastMove = gameOver.lastCalledNumber ?? (allCalled.length > 0 ? allCalled[allCalled.length - 1] : null);
+  const allCalled = gameOver?.calledNumbers || roomData?.calledNumbers || [];
+  const lastMove = gameOver?.lastCalledNumber ?? (allCalled.length > 0 ? allCalled[allCalled.length - 1] : null);
 
   const botMarkedCells = useMemo(() => {
     const set = new Set();
-    (gameOver.botMarkedCells || []).forEach(n => set.add(Number(n)));
+    (gameOver?.botMarkedCells || []).forEach(n => set.add(Number(n)));
     (botPlayer?.markedCells || []).forEach(n => set.add(Number(n)));
     allCalled.forEach(n => set.add(Number(n)));
     if (lastMove !== null && lastMove !== undefined) set.add(Number(lastMove));
     return Array.from(set);
-  }, [gameOver.botMarkedCells, botPlayer?.markedCells, allCalled, lastMove]);
+  }, [gameOver?.botMarkedCells, botPlayer?.markedCells, allCalled, lastMove]);
 
   const botBingoLines = useMemo(() => {
     if (!botBoard || botBoard.length !== 5) return [];
     const recalc = checkBingoLines(botBoard, new Set(botMarkedCells));
-    return Array.from(new Set([...(gameOver.botBingoLines || []), ...recalc]));
-  }, [gameOver.botBingoLines, botBoard, botMarkedCells]);
+    return Array.from(new Set([...(gameOver?.botBingoLines || []), ...recalc]));
+  }, [gameOver?.botBingoLines, botBoard, botMarkedCells]);
+
+  // Hooks above run on every render; only now is it safe to bail out.
+  if (!gameOver) return null;
 
   const winners = gameOver.winners || [];
   const isDraw = Boolean(gameOver.draw) || winners.length > 1;
@@ -108,9 +120,9 @@ export default function GameOverModal() {
             ) : isCreator ? (
               <>
                 <p className="host-note">Everyone still in the room will join the next round.</p>
-                <button className="btn btn-primary" onClick={() => replayGame()} type="button">
+                <button className="btn btn-primary" onClick={handleNextRound} disabled={replayPending} type="button">
                   <RefreshIcon size={16} />
-                  <span>Next round</span>
+                  <span>{replayPending ? 'Starting' : 'Next round'}</span>
                 </button>
                 <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
                   <LogOutIcon size={15} />

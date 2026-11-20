@@ -58,8 +58,6 @@ export default function BotBoardModal({
   const [lineCoords, setLineCoords] = useState({});
   const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
 
-  if (!board || !Array.isArray(board) || board.length !== 5) return null;
-
   // Normalized set of all marked numbers
   const markedSet = useMemo(() => {
     const set = new Set();
@@ -72,7 +70,7 @@ export default function BotBoardModal({
 
   // Authoritative completed lines: combine passed bingoLines with recalculation on board
   const linesList = useMemo(() => {
-    const detected = checkBingoLines(board, markedSet);
+    const detected = Array.isArray(board) && board.length === 5 ? checkBingoLines(board, markedSet) : [];
     const combined = new Set([...(bingoLines || []), ...detected]);
     return Array.from(combined);
   }, [board, markedSet, bingoLines]);
@@ -136,6 +134,8 @@ export default function BotBoardModal({
       window.removeEventListener('resize', updateCoords);
     };
   }, [updateCoords]);
+
+  if (!board || !Array.isArray(board) || board.length !== 5) return null;
 
   const difficultyLabels = {
     beginner: 'Beginner',

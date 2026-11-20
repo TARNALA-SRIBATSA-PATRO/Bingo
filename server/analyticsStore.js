@@ -16,7 +16,14 @@ import {
   getContextualMatrix,
   formatTimeIST,
   formatDateIST,
-  selectAutoPilotSlotKey
+  selectAutoPilotSlotKey,
+  getMomentContext,
+  composeNotificationForMoment,
+  collectRecentSentCopy,
+  assessCopyForMoment,
+  identifyEngineCopy,
+  evaluateScheduledDispatch,
+  nextAllowedSendTime
 } from './aiNotificationEngine.js';
 export { generateSmartNotificationCampaign, getContextualMatrix, formatTimeIST, formatDateIST };
 
@@ -110,6 +117,7 @@ async function loadStore() {
         adminSecurity: { ...defaultState.adminSecurity, ...(parsed.adminSecurity || {}) }
       };
       recomputeAggregatedBotStats();
+      normalizeScheduledItemsOnLoad();
       console.log('[AnalyticsStore] Local cache loaded from disk.');
     } catch (e) {
       console.warn('[AnalyticsStore] Error reading local analytics cache:', e);
@@ -160,11 +168,13 @@ async function loadStore() {
         if (dbRows.push_funnel) memoryStore.pushFunnel = { ...defaultState.pushFunnel, ...dbRows.push_funnel };
         if (dbRows.ai_auto_pilot) memoryStore.aiAutoPilot = { ...defaultState.aiAutoPilot, ...dbRows.ai_auto_pilot };
         if (dbRows.scheduling_notices) memoryStore.schedulingNotices = Array.isArray(dbRows.scheduling_notices) ? dbRows.scheduling_notices : [];
+        if (dbRows.rooms && typeof dbRows.rooms === 'object') memoryStore.rooms = dbRows.rooms;
         if (dbRows.admin_security && dbRows.admin_security.passwordHash) {
           memoryStore.adminSecurity = { ...defaultState.adminSecurity, ...dbRows.admin_security };
         }
 
         recomputeAggregatedBotStats();
+        normalizeScheduledItemsOnLoad();
         flushToDisk();
         console.log('[AnalyticsStore] State successfully loaded and synced from PostgreSQL cloud database!');
       } else {
@@ -225,6 +235,7 @@ async function flushStore() {
         else if (k === 'ai_auto_pilot') await saveKeyToDatabase('ai_auto_pilot', memoryStore.aiAutoPilot);
         else if (k === 'scheduling_notices') await saveKeyToDatabase('scheduling_notices', memoryStore.schedulingNotices);
         else if (k === 'admin_security') await saveKeyToDatabase('admin_security', memoryStore.adminSecurity);
+        else if (k === 'rooms') await saveKeyToDatabase('rooms', memoryStore.rooms || {});
       }
     } catch (err) {
       console.error('[AnalyticsStore] Error saving dirty keys to PostgreSQL:', err.message);
@@ -713,6 +724,7 @@ export function getSentTodayAndRecent() {
     pendingScheduledList: pendingScheduledList.map(s => ({
       id: s.id,
       title: s.title,
+      message: s.message,
       scheduledAt: s.scheduledAt
     }))
   };
@@ -721,6 +733,114 @@ export function getSentTodayAndRecent() {
 // -------------------------------------------------------------
 // SCHEDULED PUSH NOTIFICATIONS (DIRECT DISPATCH)
 // -------------------------------------------------------------
+/**
+ * Stamp the slot / date the item's text is written for. Always derived from the
+ * item's own scheduledAt (IST), which is the single source of truth for its copy.
+ */
+function stampScheduledMoment(item) {
+  const m = getMomentContext(item.scheduledAt);
+  item.slotKey = m.slotKey;
+  item.slotTitle = m.slotTitle;
+  item.targetDateKey = m.dateKey;
+  item.targetDayName = m.dayName;
+  return m;
+}
+
+/** 'engine' when the text comes from the copy engine (pools / festival greeting), else 'admin'. */
+function detectCopyOrigin(item) {
+  if (item.source === 'ai_autopilot') return 'engine';
+  return identifyEngineCopy(item.title, item.message) ? 'engine' : 'admin';
+}
+
+/** Anti-repeat memory for re-texting, without the item's own current text. */
+function recentCopyExcluding(item) {
+  const historyData = getSentTodayAndRecent();
+  historyData.pendingScheduledList = (historyData.pendingScheduledList || []).filter(s => s.id !== item.id);
+  return collectRecentSentCopy(historyData);
+}
+
+/** Replace the item's text with a fresh variant composed for `ms` (same anti-repeat memory). */
+function recomposeScheduledCopy(item, ms, reason) {
+  const composed = composeNotificationForMoment({ ms, recent: recentCopyExcluding(item) });
+  item.previousTitle = item.title;
+  item.previousMessage = item.message;
+  item.title = composed.title;
+  item.message = composed.message;
+  item.url = composed.url || item.url || '/lobby';
+  item.copyKind = composed.copyKind;
+  item.festivalKey = composed.festivalKey;
+  item.textSlotKey = composed.slotKey; // slot the final text belongs to (slotKey stays the scheduled one)
+  item.copyOrigin = 'engine';
+  item.retextReason = reason;
+  item.retextedAt = Date.now();
+  return composed;
+}
+
+/**
+ * Make sure engine copy fits the moment the item is scheduled for (slot, weekday,
+ * weekend, festival status of THAT date). Admin-written text is left alone.
+ */
+function ensureCopyFitsScheduledMoment(item, why) {
+  const m = stampScheduledMoment(item);
+  if (item.copyOrigin !== 'engine') return false;
+  const fit = assessCopyForMoment(item.title, item.message, m);
+  const festivalExpected = item.copyKind === 'festival_eve' ? m.nextDateKey : m.dateKey;
+  const festivalMismatch = item.festivalKey && item.festivalKey !== festivalExpected;
+  // Engine text we cannot recognise comes from an older pool (no day/time tags): rewrite it for the moment
+  const legacyEngineText = fit.origin === 'admin';
+  if (fit.fits && !festivalMismatch && !legacyEngineText) {
+    if (fit.kind) item.copyKind = fit.kind;
+    if (!item.festivalKey && (fit.kind === 'festival_greeting' || fit.kind === 'festive')) item.festivalKey = m.dateKey;
+    if (!item.festivalKey && fit.kind === 'festival_eve') item.festivalKey = m.nextDateKey;
+    return false;
+  }
+  const reason = `${why}: ${fit.reason || (legacyEngineText ? 'text came from an older copy pool' : 'festival text for another date')}; re-texted for ${m.slotTitle} on ${m.dayName}`;
+  recomposeScheduledCopy(item, item.scheduledAt, reason);
+  console.log(`[PushScheduler] ${reason} ("${item.previousTitle}" -> "${item.title}")`);
+  return true;
+}
+
+/**
+ * Called once after the store is loaded (disk and database):
+ * - an item caught mid-dispatch by a restart ('processing') is never sent again
+ * - legacy pending items get their slot/date stamp and, when engine-written, text that fits
+ * - pending items inside the quiet hours move to the next 08:30 IST
+ */
+function normalizeScheduledItemsOnLoad() {
+  const list = memoryStore.scheduledNotifications;
+  if (!Array.isArray(list) || list.length === 0) return;
+  let changed = false;
+  for (const item of list) {
+    if (!item) continue;
+    if (item.status === 'processing') {
+      item.status = 'sent';
+      item.sentAt = item.sentAt || item.dispatchStartedAt || Date.now();
+      item.note = 'Dispatch was interrupted by a restart; not sent again.';
+      changed = true;
+      continue;
+    }
+    if (item.status !== 'pending') continue;
+    const allowed = nextAllowedSendTime(item.scheduledAt);
+    if (allowed !== item.scheduledAt) {
+      item.deferReason = `Quiet hours (23:00-08:00 IST): moved from ${formatTimeIST(item.scheduledAt, true)} to ${formatDateIST(allowed)} at ${formatTimeIST(allowed, true)}.`;
+      item.scheduledAt = allowed;
+      changed = true;
+    }
+    if (!item.copyOrigin) {
+      item.copyOrigin = detectCopyOrigin(item);
+      changed = true;
+    }
+    if (!item.slotKey || !item.targetDateKey) {
+      ensureCopyFitsScheduledMoment(item, 'Migrated pending item');
+      changed = true;
+    }
+  }
+  if (changed) {
+    list.sort((a, b) => a.scheduledAt - b.scheduledAt);
+    scheduleFlush('scheduled_notifications');
+  }
+}
+
 export async function schedulePushNotification({
   title,
   message,
@@ -745,6 +865,10 @@ export async function schedulePushNotification({
     }
   }
 
+  // Never land in the quiet hours (23:00-08:00 IST): move to the next 08:30 IST
+  const requestedTime = time;
+  time = nextAllowedSendTime(time);
+
   const schedId = `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const item = {
     id: schedId,
@@ -754,8 +878,14 @@ export async function schedulePushNotification({
     scheduledAt: time,
     createdAt: Date.now(),
     source, // 'manual' | 'ai_studio' | 'ai_autopilot'
-    status: 'pending' // 'pending' | 'sent' | 'cancelled'
+    status: 'pending' // 'pending' | 'processing' | 'sent' | 'skipped' | 'failed' | 'cancelled'
   };
+  if (time !== requestedTime) {
+    item.deferReason = `Quiet hours (23:00-08:00 IST): moved from ${formatDateIST(requestedTime)} ${formatTimeIST(requestedTime, true)} to ${formatDateIST(time)} ${formatTimeIST(time, true)}.`;
+  }
+  item.copyOrigin = detectCopyOrigin(item);
+  // Slot / date the text is written for, always from the final send time; engine copy is re-fitted if the time moved
+  ensureCopyFitsScheduledMoment(item, 'Scheduled time differs from the moment the text was written for');
 
   if (!memoryStore.scheduledNotifications) {
     memoryStore.scheduledNotifications = [];
@@ -799,7 +929,7 @@ export function updateAiAutoPilotConfig({ enabled, geminiApiKey }) {
 export async function processAiAutoPilotTick() {
   if (!memoryStore.aiAutoPilot || !memoryStore.aiAutoPilot.enabled) return;
 
-  const todayKey = getTodayKey();
+  const todayKey = getTodayKeyIST();
   if (memoryStore.aiAutoPilot.lastScheduledDate === todayKey) return;
 
   const now = Date.now();
@@ -826,9 +956,10 @@ export async function processAiAutoPilotTick() {
     if (campaign && campaign.suggestions && campaign.suggestions.length > 0) {
       const topPick = campaign.suggestions[0];
       let triggerTime = topPick.scheduledAt;
-      // Strictly enforce minimum 2 hours advance buffer
+      // Strictly enforce minimum 2 hours advance buffer (and never the quiet hours).
+      // schedulePushNotification re-fits the text if the time ends up in another slot/date.
       if (!triggerTime || triggerTime < now + 2 * 60 * 60 * 1000) {
-        triggerTime = now + 2 * 60 * 60 * 1000 + 15 * 60 * 1000;
+        triggerTime = nextAllowedSendTime(now + 2 * 60 * 60 * 1000 + 15 * 60 * 1000);
       }
 
       await schedulePushNotification({
@@ -872,21 +1003,38 @@ export function updateScheduledNotification(id, { title, message, url, scheduled
   const item = memoryStore.scheduledNotifications.find(n => n.id === id);
   if (!item || item.status !== 'pending') return null;
 
-  if (title !== undefined && typeof title === 'string' && title.trim()) {
+  let textChanged = false;
+  if (title !== undefined && typeof title === 'string' && title.trim() && title.trim() !== item.title) {
     item.title = title.trim();
+    textChanged = true;
   }
-  if (message !== undefined && typeof message === 'string' && message.trim()) {
+  if (message !== undefined && typeof message === 'string' && message.trim() && message.trim() !== item.message) {
     item.message = message.trim();
+    textChanged = true;
   }
   if (url !== undefined && typeof url === 'string') {
     item.url = url.trim() || '/lobby';
   }
+  if (textChanged) {
+    // Text typed by the admin is theirs; engine text pasted back in is still engine text
+    item.copyOrigin = identifyEngineCopy(item.title, item.message) ? 'engine' : 'admin';
+    item.copyKind = undefined;
+    item.festivalKey = null;
+  }
+  let timeChanged = false;
   if (scheduledAt !== undefined) {
     const timeMs = new Date(scheduledAt).getTime();
     if (!isNaN(timeMs) && timeMs > Date.now()) {
-      item.scheduledAt = timeMs;
+      const allowed = nextAllowedSendTime(timeMs);
+      if (allowed !== timeMs) {
+        item.deferReason = `Quiet hours (23:00-08:00 IST): moved from ${formatDateIST(timeMs)} ${formatTimeIST(timeMs, true)} to ${formatDateIST(allowed)} ${formatTimeIST(allowed, true)}.`;
+      }
+      timeChanged = allowed !== item.scheduledAt;
+      item.scheduledAt = allowed;
     }
   }
+  // A moved scheduledAt must not keep text written for the old slot/date
+  ensureCopyFitsScheduledMoment(item, timeChanged ? 'Scheduled time was edited' : 'Scheduled text was edited');
 
   item.updatedAt = Date.now();
   memoryStore.scheduledNotifications.sort((a, b) => a.scheduledAt - b.scheduledAt);
@@ -894,35 +1042,121 @@ export function updateScheduledNotification(id, { title, message, url, scheduled
   return item;
 }
 
-// Process any pending scheduled push notifications that have become due
-export async function processDueScheduledNotifications() {
-  if (!memoryStore.scheduledNotifications || memoryStore.scheduledNotifications.length === 0) return;
-  const now = Date.now();
-  const due = memoryStore.scheduledNotifications.filter(
-    n => n.status === 'pending' && n.scheduledAt <= now
-  );
-
-  for (const item of due) {
-    item.status = 'processing';
+/** Persist the scheduled list right now (disk synchronously, database awaited) so a restart cannot lose a sent flag. */
+async function persistScheduledNow() {
+  flushToDisk();
+  if (isDbConnected()) {
     try {
-      const result = await sendBroadcastPushNotification({
-        title: item.title,
-        message: item.message,
-        url: item.url
-      });
-      item.status = 'sent';
-      item.sentAt = Date.now();
-      item.deliveredCount = result.deliveredCount || 0;
-      item.failedCount = result.failedCount || 0;
-      console.log(`[PushScheduler] Dispatched scheduled broadcast "${item.title}" to ${result.deliveredCount} devices.`);
+      await saveKeyToDatabase('scheduled_notifications', memoryStore.scheduledNotifications);
     } catch (err) {
-      console.error(`[PushScheduler] Error dispatching scheduled notification "${item.id}":`, err);
-      item.status = 'failed';
-      item.error = err.message;
+      console.error('[PushScheduler] Error persisting scheduled notifications:', err.message);
     }
   }
+}
 
-  if (due.length > 0) {
+/** Put a skipped scheduled item into the admin history (0 devices) with the reason. */
+function recordSkippedNotification(item, reason) {
+  const record = {
+    id: `skip_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    title: `Skipped: ${item.title}`,
+    message: `Not sent. ${reason}`,
+    url: item.url || '/',
+    sentAt: Date.now(),
+    deliveredCount: 0,
+    failedCount: 0,
+    clicksCount: 0,
+    conversionsCount: 0,
+    status: 'skipped',
+    skipReason: reason,
+    scheduledId: item.id,
+    scheduledAt: item.scheduledAt,
+    originalMessage: item.message
+  };
+  memoryStore.notificationsHistory.unshift(record);
+  if (memoryStore.notificationsHistory.length > 100) {
+    memoryStore.notificationsHistory = memoryStore.notificationsHistory.slice(0, 100);
+  }
+  scheduleFlush('notifications_history');
+  return record;
+}
+
+// In-flight guard: two overlapping ticks (slow push round-trips) must never double-send
+let dispatchInFlight = false;
+
+// Process any pending scheduled push notifications that have become due.
+// Just before each send the ACTUAL current IST moment is re-evaluated (see evaluateScheduledDispatch):
+// late items are skipped, quiet-hour items are deferred, engine copy for another slot/date is re-texted.
+export async function processDueScheduledNotifications() {
+  if (dispatchInFlight) return;
+  if (!memoryStore.scheduledNotifications || memoryStore.scheduledNotifications.length === 0) return;
+  dispatchInFlight = true;
+  let touched = 0;
+  try {
+    const now = Date.now();
+    const due = memoryStore.scheduledNotifications.filter(
+      n => n.status === 'pending' && n.scheduledAt <= now
+    );
+
+    for (const item of due) {
+      if (item.status !== 'pending') continue; // changed by an admin action meanwhile
+      const decision = evaluateScheduledDispatch(item, Date.now());
+      if (decision.action === 'wait' || decision.action === 'ignore') continue;
+      touched++;
+
+      if (decision.action === 'skip') {
+        item.status = 'skipped';
+        item.skippedAt = Date.now();
+        item.skipReason = decision.reason;
+        recordSkippedNotification(item, decision.reason);
+        console.warn(`[PushScheduler] ${decision.reason} ("${item.title}")`);
+        continue;
+      }
+
+      if (decision.action === 'defer') {
+        item.scheduledAt = decision.deferToMs;
+        item.deferReason = decision.reason;
+        ensureCopyFitsScheduledMoment(item, 'Deferred out of the quiet hours');
+        console.log(`[PushScheduler] ${decision.reason} ("${item.title}")`);
+        continue;
+      }
+
+      if (decision.action === 'retext') {
+        recomposeScheduledCopy(item, decision.moment.ms, decision.reason);
+        console.log(`[PushScheduler] ${decision.reason} ("${item.previousTitle}" -> "${item.title}")`);
+      } else if (decision.note) {
+        item.note = decision.note;
+        console.warn(`[PushScheduler] ${decision.note} ("${item.title}")`);
+      }
+
+      // Idempotency: mark + persist BEFORE the push goes out, so a restart mid-send cannot send it twice
+      item.status = 'processing';
+      item.sentAt = Date.now();
+      item.dispatchStartedAt = item.sentAt;
+      item.lateMinutes = decision.lateMinutes || 0;
+      await persistScheduledNow();
+
+      try {
+        const result = await sendBroadcastPushNotification({
+          title: item.title,
+          message: item.message,
+          url: item.url
+        });
+        item.status = 'sent';
+        item.sentAt = Date.now();
+        item.deliveredCount = result.deliveredCount || 0;
+        item.failedCount = result.failedCount || 0;
+        console.log(`[PushScheduler] Dispatched scheduled broadcast "${item.title}" to ${result.deliveredCount} devices (${item.slotKey || 'no slot'}, ${formatTimeIST(item.sentAt, true)}).`);
+      } catch (err) {
+        console.error(`[PushScheduler] Error dispatching scheduled notification "${item.id}":`, err);
+        item.status = 'failed';
+        item.error = err.message;
+      }
+    }
+  } finally {
+    dispatchInFlight = false;
+  }
+
+  if (touched > 0) {
     // Retain pending items and last 30 completed/cancelled items
     const pending = memoryStore.scheduledNotifications.filter(n => n.status === 'pending');
     const past = memoryStore.scheduledNotifications.filter(n => n.status !== 'pending').slice(-30);
@@ -1330,7 +1564,27 @@ export function restoreBackupData(backupData) {
 }
 
 // Initialize on module import
-loadStore();
+// Room snapshots live in the store too, so a restart becomes a short pause for the players in a room.
+export function saveRoomsSnapshot(snapshot) {
+  memoryStore.rooms = snapshot || {};
+  scheduleFlush('rooms');
+}
+
+export function loadRoomsSnapshot() {
+  return memoryStore.rooms && typeof memoryStore.rooms === 'object' ? memoryStore.rooms : {};
+}
+
+// Write everything that is pending right now (used on shutdown).
+export function flushStoreNow() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  flushToDisk();
+}
+
+// Resolves once the local cache and, when configured, the database have been read.
+export const storeReady = loadStore();
 
 // Start recurring background scheduler (checks every 20 seconds for due notifications & auto-pilot tick)
 setInterval(() => {

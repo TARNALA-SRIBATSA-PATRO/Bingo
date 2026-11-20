@@ -10,8 +10,9 @@ export default function LeaveModal({ onClose }) {
   if (!roomData) return null;
 
   const isBot = Boolean(roomData.isBot);
+  // Only a player who is connected right now can take over as host.
   const otherPlayers = Object.values(roomData.players || {}).filter(
-    p => p.id !== playerId && !p.id.startsWith('bot') && p.id !== 'bot-opponent'
+    p => p.id !== playerId && !p.id.startsWith('bot') && p.id !== 'bot-opponent' && p.connected !== false
   );
 
   const handleTransferAndLeave = () => {

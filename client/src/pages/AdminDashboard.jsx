@@ -2572,7 +2572,13 @@ export default function AdminDashboard() {
                         );
                       })()}
                     </td>
-                    <td><span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Delivered</span></td>
+                    <td>
+                      {item.status === 'skipped' ? (
+                        <span style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 700 }} title={item.skipReason || ''}>Skipped</span>
+                      ) : (
+                        <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Delivered</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

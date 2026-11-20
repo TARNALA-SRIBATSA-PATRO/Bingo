@@ -4,6 +4,7 @@ import { useGame } from '../context/GameContext';
 import { useSocket } from '../context/SocketContext';
 import { buildPlayerColorMap } from '../utils/playerColors';
 import SoundToggle from '../components/SoundToggle';
+import ReturningPanel from '../components/ReturningPanel';
 import {
   CopyIcon, ShareIcon, CrownIcon, TrophyIcon, CheckIcon, LogOutIcon,
   TriangleDownIcon, TriangleUpIcon, BotIcon, WifiOffIcon
@@ -58,12 +59,16 @@ export default function GamePage() {
   const navigate = useNavigate();
   const { connected } = useSocket() || {};
   const {
-    roomData, myPlayer, playerId, isMyTurn,
+    roomData, myPlayer, playerId, isMyTurn, sessionPending,
     callNumber, leaveRoom, showNotif, setShareModalData
   } = useGame();
 
   const [selectedNumber, setSelectedNumber] = useState(null);
   const [callError, setCallError] = useState('');
+  // A call is sent once; the button waits for the answer so a second tap cannot follow it.
+  const [callPending, setCallPending] = useState(false);
+  // Ticks once a second while an away player's turn clock is running.
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
   const [lineCoords, setLineCoords] = useState({});
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -73,7 +78,7 @@ export default function GamePage() {
   const prevCalledCount = useRef(null);
   const MAX_HISTORY_ROWS = 3;
 
-  useEffect(() => { if (!roomData) navigate('/lobby'); }, [roomData, navigate]);
+  useEffect(() => { if (!roomData && !sessionPending) navigate('/lobby'); }, [roomData, sessionPending, navigate]);
 
   const turnIndex = roomData?.currentTurnIndex;
   const calledCount = roomData?.calledNumbers?.length;
@@ -83,7 +88,16 @@ export default function GamePage() {
   useEffect(() => {
     setSelectedNumber(null);
     setCallError('');
+    setCallPending(false);
   }, [turnIndex, isMyTurn, calledCount, gameIndex]);
+
+  const turnDeadline = roomData?.turnDeadline || null;
+  useEffect(() => {
+    if (!turnDeadline) return;
+    setClockNow(Date.now());
+    const t = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [turnDeadline]);
 
   const myLinesList = useMemo(() => {
     const lines = myPlayer?.bingoLines;
@@ -199,7 +213,8 @@ export default function GamePage() {
     return map;
   }, [calledHistory]);
 
-  if (!roomData || !myPlayer) return null;
+  if (!roomData) return sessionPending ? <ReturningPanel /> : null;
+  if (!myPlayer) return null;
 
   const isBot = Boolean(roomData.isBot);
   const isPlaying = roomData.status === 'playing';
@@ -222,14 +237,16 @@ export default function GamePage() {
   }
 
   function handleCallConfirm() {
-    if (!isMyTurn || !isPlaying || !selectedNumber) return;
+    if (!isMyTurn || !isPlaying || !selectedNumber || callPending) return;
     if (calledNumbers.includes(selectedNumber) || myMarked.has(selectedNumber)) {
       setCallError('That number has already been called.');
       setSelectedNumber(null);
       return;
     }
     setCallError('');
+    setCallPending(true);
     callNumber(selectedNumber, res => {
+      setCallPending(false);
       if (!res.success) setCallError(res.error || 'Could not call that number.');
       else setSelectedNumber(null);
     });
@@ -246,12 +263,13 @@ export default function GamePage() {
   };
 
   const turnPlayerDisconnected = currentTurnPlayer?.connected === false;
+  const skipInSeconds = turnPlayerDisconnected && turnDeadline ? Math.max(0, Math.ceil((turnDeadline - clockNow) / 1000)) : null;
   const turnLabel = isMyTurn
     ? 'Your turn'
     : isBot
       ? 'Bot is choosing'
       : turnPlayerDisconnected
-        ? `${currentTurnPlayer?.name || 'Someone'} is reconnecting`
+        ? `${currentTurnPlayer?.name || 'Someone'} is away`
         : `${currentTurnPlayer?.name || 'Someone'}'s turn`;
 
   const historyList = roomData.gameHistory || [];
@@ -371,9 +389,9 @@ export default function GamePage() {
               {isMyTurn ? (
                 selectedNumber ? (
                   <>
-                    <button className="btn btn-primary" onClick={handleCallConfirm} type="button">
+                    <button className="btn btn-primary" onClick={handleCallConfirm} disabled={callPending} type="button">
                       <CheckIcon size={16} />
-                      <span>Call {selectedNumber}</span>
+                      <span>{callPending ? 'Calling' : `Call ${selectedNumber}`}</span>
                     </button>
                     <button className="btn btn-ghost" onClick={() => { setSelectedNumber(null); setCallError(''); }} type="button">
                       Cancel
@@ -385,7 +403,7 @@ export default function GamePage() {
               ) : (
                 <span className="call-hint">
                   {isBot ? 'The bot is choosing a number.' : turnPlayerDisconnected ? (
-                    <><strong style={{ color: turnColor?.text }}>{currentTurnPlayer?.name}</strong> is reconnecting.</>
+                    <><strong style={{ color: turnColor?.text }}>{currentTurnPlayer?.name}</strong> is away.{skipInSeconds !== null ? ` Their turn passes in ${skipInSeconds} s.` : ''}</>
                   ) : (
                     <>Waiting for <strong style={{ color: turnColor?.text }}>{currentTurnPlayer?.name}</strong> to call.</>
                   )}
@@ -428,7 +446,7 @@ export default function GamePage() {
                         {!isBot && p.id === roomData.creatorId && <CrownIcon size={12} className="host-icon" />}
                       </span>
                       {p.connected === false
-                        ? <span className="tag tag-bad">Reconnecting</span>
+                        ? <span className="tag tag-bad">Away</span>
                         : isTurn && <span className="tag">Turn</span>}
                     </div>
                     <div className="player-card-foot">
