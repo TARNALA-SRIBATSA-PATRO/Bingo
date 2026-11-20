@@ -49,8 +49,11 @@ export function copyToClipboard(text) {
  */
 export async function triggerShare({ roomId, showNotif, onFallbackModal }) {
   if (!roomId) return;
+  // The link opens the lobby on the join step with the code filled in; a saved name joins straight away.
   const shareUrl = `${window.location.origin}/lobby?room=${roomId}`;
-  const shareText = `Join my bingo room. Room code: ${roomId}`;
+  // Share sheets add the link themselves, so the sentence goes without it; the copied message has it.
+  const shareText = `Join my bingo room, code ${roomId}`;
+  const shareMessage = `${shareText}: ${shareUrl}`;
 
   // 1. Try native Web Share API (only works in HTTPS or localhost)
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
@@ -91,6 +94,6 @@ export async function triggerShare({ roomId, showNotif, onFallbackModal }) {
 
   // 3. If a fallback modal handler was provided, trigger the share sheet modal
   if (onFallbackModal) {
-    onFallbackModal({ roomId, shareUrl, shareText });
+    onFallbackModal({ roomId, shareUrl, shareText: shareMessage });
   }
 }

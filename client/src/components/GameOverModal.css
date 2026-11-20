@@ -100,6 +100,24 @@
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
 }
+.waiting-host .btn { margin-left: auto; min-height: 32px; flex-shrink: 0; }
+
+/* Who is ready for the next round: one line, names with their state. */
+.ready-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.ready-list p { font-size: 0.85rem; color: var(--ink-2); line-height: 1.5; }
+.ready-item { white-space: nowrap; }
+.ready-item.is-ready { color: var(--ok); font-weight: 600; }
+.ready-item.is-away { color: var(--ink-3); }
 
 @media (max-width: 480px) {
   .game-over-modal { padding: 24px 18px 18px; }

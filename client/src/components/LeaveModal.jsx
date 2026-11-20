@@ -4,9 +4,9 @@ import './LeaveModal.css';
 import useModalA11y from '../hooks/useModalA11y';
 
 export default function LeaveModal({ onClose }) {
+  const { roomData, playerId, isCreator, actualLeaveRoom, transferCreator } = useGame();
   const panelRef = useRef(null);
   useModalA11y(panelRef, onClose, Boolean(roomData));
-  const { roomData, playerId, isCreator, actualLeaveRoom, transferCreator } = useGame();
   const [selectedTarget, setSelectedTarget] = useState('');
   const [error, setError] = useState('');
 

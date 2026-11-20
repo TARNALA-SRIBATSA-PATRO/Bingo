@@ -35,7 +35,7 @@ export default defineConfig({
     postcss: { plugins: [phoneClassMedia] }
   },
   define: {
-    __APP_VERSION__: JSON.stringify('2.6.8'),
+    __APP_VERSION__: JSON.stringify('2.7.0'),
     __BUILD_TIMESTAMP__: JSON.stringify(Date.now().toString()),
   },
   server: {

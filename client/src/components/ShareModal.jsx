@@ -30,7 +30,7 @@ export default function ShareModal({ data, onClose }) {
   };
 
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
-    `Join my BINGO room.\nRoom Code: *${roomId}*\nPlay here: ${shareUrl}`
+    shareText || `Join my bingo room, code ${roomId}: ${shareUrl}`
   )}`;
 
   return (

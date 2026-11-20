@@ -227,6 +227,8 @@ export function GameProvider({ children }) {
     socket.on('room:update', (data) => {
       // Do not overwrite local offline bot match with socket updates
       if (roomRef.current.isBot) return;
+      // When this frame arrived, so screens can compare the server's clock (serverNow) with this device's.
+      data.receivedAt = Date.now();
       const ref = roomRef.current;
       const version = typeof data.version === 'number' ? data.version : null;
       if (ref.id === data.id && version !== null && version < ref.version) return; // older than what is on screen
@@ -864,6 +866,18 @@ export function GameProvider({ children }) {
     });
   }, [roomData, playerId, syncBotSession, navigate, socket]);
 
+  // Ready for the next round (multiplayer only). The server starts the round once everyone is ready.
+  const setNextReady = useCallback((ready, cb) => {
+    if (!socket || roomData?.isBot) {
+      if (cb) cb({ success: false, error: 'Not available in a bot game.' });
+      return;
+    }
+    if (!socket.connected) return offlineReply(cb);
+    emitWithAck(socket, 'game:ready', { ready: Boolean(ready) }, (res) => {
+      if (cb) cb(res);
+    });
+  }, [socket, roomData?.isBot]);
+
   // Leave the room.
   const requestLeaveRoom = useCallback(() => {
     setShowLeaveModal(true);
@@ -996,7 +1010,7 @@ export function GameProvider({ children }) {
       roomData, playerId, myPlayer, isCreator, isMyTurn, sessionPending,
       notification, showNotif,
       gameOver, setGameOver,
-      createRoom, joinRoom, startBotGame, submitBoard, startGame, callNumber, replayGame,
+      createRoom, joinRoom, startBotGame, submitBoard, startGame, callNumber, replayGame, setNextReady,
       leaveRoom: requestLeaveRoom,
       actualLeaveRoom: leaveRoom,
       transferCreator,

@@ -144,41 +144,175 @@
 
 .submit-action-btn { width: 100%; }
 
-/* Difficulty */
-.difficulty-group { border: none; padding: 0; }
-.difficulty-group legend {
-  font-size: 0.875rem;
-  color: var(--ink-2);
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-
-.diff-option {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 10px;
-  row-gap: 2px;
+/* Difficulty slider: a track with three stops, brass up to the 44 px thumb. */
+.difficulty-group { display: flex; flex-direction: column; gap: 6px; }
+.difficulty-head {
+  display: flex;
   align-items: center;
-  padding: 12px 14px;
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  justify-content: space-between;
 }
-.diff-option + .diff-option { margin-top: 8px; }
-.diff-option:hover { border-color: var(--line-strong); }
-.diff-option.selected { border-color: var(--brass); background: var(--brass-soft); }
+.difficulty-head label { font-size: 0.875rem; color: var(--ink-2); font-weight: 500; }
 
-.diff-option input[type="radio"] {
-  grid-row: span 2;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--brass);
+.difficulty-slider {
+  --thumb: 44px;
+  --track: 8px;
+  /* Where the thumb centre sits: the thumb never leaves the box, so its centre runs from 22px to 100% - 22px. */
+  --pos: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--frac, 1));
+  position: relative;
+  width: 100%;
+  height: var(--thumb);
 }
-.diff-title { font-weight: 600; color: var(--ink); font-size: 0.95rem; }
-.diff-desc { font-size: 0.8rem; color: var(--ink-2); line-height: 1.35; }
+.difficulty-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: var(--thumb);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+/* The generic input focus ring (border and shadow) belongs on text fields; here focus shows on the thumb. */
+.difficulty-slider input[type="range"]:focus,
+.difficulty-slider input[type="range"]:focus-visible { outline: none; border: none; box-shadow: none; }
+.difficulty-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--track);
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(to right, var(--brass) 0, var(--brass) var(--pos), var(--surface-2) var(--pos), var(--surface-2) 100%);
+}
+.difficulty-slider input[type="range"]::-moz-range-track {
+  height: var(--track);
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.difficulty-slider input[type="range"]::-moz-range-progress {
+  height: var(--track);
+  border-radius: 999px;
+  background: var(--brass);
+}
+.difficulty-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((var(--track) - var(--thumb)) / 2 - 1px);
+  border-radius: 50%;
+  background: var(--brass);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 3px 0 var(--brass-deep);
+  transition: box-shadow var(--t-fast) var(--ease);
+}
+.difficulty-slider input[type="range"]::-moz-range-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 50%;
+  background: var(--brass);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 3px 0 var(--brass-deep);
+}
+.difficulty-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--line-strong), 0 0 0 5px var(--brass-soft);
+}
+.difficulty-slider input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 1px var(--line-strong), 0 0 0 5px var(--brass-soft);
+}
+/* The three stops sit under the thumb centres: first at 22px, last at 100% - 22px. */
+.difficulty-stops {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--thumb) / 2 - 6px);
+  right: calc(var(--thumb) / 2 - 6px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.difficulty-stop {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+}
+.difficulty-stop.filled { background: var(--brass); border-color: var(--brass); }
+
+.difficulty-labels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+.difficulty-label {
+  min-height: 32px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
+}
+.difficulty-label:nth-child(1) { justify-self: start; text-align: left; }
+.difficulty-label:nth-child(2) { justify-self: center; text-align: center; }
+.difficulty-label:nth-child(3) { justify-self: end; text-align: right; }
+.difficulty-label:hover { color: var(--ink); }
+.difficulty-label.active { color: var(--brass); font-weight: 600; }
+
+.difficulty-desc {
+  min-height: 2.8em;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+/* Invite link: joining with the saved name, with a way out. */
+.auto-join-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  animation: rise-in var(--t) var(--ease);
+}
+.auto-join-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.auto-join-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.auto-join-text strong { font-weight: 600; }
+.auto-join-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brass);
+  flex-shrink: 0;
+  animation: auto-join-pulse 1.4s ease-in-out infinite;
+}
+@keyframes auto-join-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.auto-join-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 /* Notices */
 .offline-notice {

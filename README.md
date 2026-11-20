@@ -41,6 +41,19 @@ This installs and builds the client, then installs the server. `npm start` serve
 5. Five lines wins the round.
 6. The host can start another round in the same room. Wins carry over.
 
+## Bot training
+
+The bot's `pro` and `intermediate` levels play a learned policy: a linear score over 20 hand-made features of the bot's own card after a candidate call (lines by marks count, fewest extra marks for five lines, how many of the remaining cells would shorten that path, and so on). The bot picks the uncalled number with the best score. It never reads the player's card.
+
+The weights live in `client/src/utils/botPolicy.json` and are imported statically, so there is no runtime dependency and no network. Two scripts at the repo root maintain them (Node 18+, no npm packages):
+
+```bash
+node tools/train-bot.mjs          # self-play training, about five minutes, rewrites botPolicy.json
+node tools/eval-bot.mjs           # 5000 seeded games per matchup, prints a results table
+```
+
+Training is a Monte Carlo policy gradient: the learner samples calls from a softmax over its scores against a mix of random play, the previous hand-written `pro` heuristic and itself, and is rewarded +1 for a win, -1 for a loss, 0 for a draw, minus 0.01 per own call so faster wins count more. Both scripts take `--seed` and `--episodes` / `--games`. Note that half of all marks in a round come from the other player, so even a perfect policy wins only about 47% and loses 34% against the old heuristic, with the rest drawn; the evaluator also prints the average number of marks each policy needs for five lines, where the exact optimum is 18.48.
+
 ## Project layout
 
 ```
@@ -54,4 +67,9 @@ client/
     context/                SocketContext, GameContext, AudioContext
     components/
     utils/botEngine.js      bot opponent
+    utils/botPolicy.json    learned weights for the bot (see Bot training)
+tools/
+  train-bot.mjs             trains botPolicy.json by self-play
+  eval-bot.mjs              measures the bot against the old heuristic and random play
+  bot-sim.mjs               shared game loop for the two scripts
 ```

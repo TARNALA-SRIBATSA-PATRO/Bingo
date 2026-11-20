@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
+import { useSocket } from '../context/SocketContext';
 import {
   getPersistentPlayerName,
   getPersistentPlayerNameSync,
@@ -12,14 +13,20 @@ import { ArrowLeftIcon, PlusIcon, KeyIcon, BotIcon, ChevronRightIcon } from '../
 import './Lobby.css';
 
 const DIFFICULTIES = [
-  { id: 'beginner', label: 'Beginner', desc: 'Calls numbers at random. Good for learning the flow.' },
-  { id: 'intermediate', label: 'Intermediate', desc: 'Works on one line at a time and finishes it when it can.' },
-  { id: 'pro', label: 'Pro', desc: 'Opens from the centre and builds several lines at once.' }
+  { id: 'beginner', label: 'Beginner', desc: 'Calls numbers at random and sometimes finishes a line. Good for learning the flow.' },
+  { id: 'intermediate', label: 'Intermediate', desc: 'Plays the trained strategy about two calls in three, and a random number otherwise.' },
+  { id: 'pro', label: 'Pro', desc: 'Trained on hundreds of thousands of games. Plays for the fastest five lines.' }
 ];
+
+// An invite link joins on its own after a short pause, so the player sees what is happening and
+// can step in. On a fresh page load the socket may still be connecting; it gets this long.
+const AUTO_JOIN_DELAY_MS = 600;
+const AUTO_JOIN_CONNECT_MS = 8000;
 
 export default function Lobby() {
   const navigate = useNavigate();
   const { createRoom, joinRoom, startBotGame, playerName } = useGame();
+  const { connected } = useSocket();
 
   const [mode, setMode] = useState(null); // 'bot' | 'create' | 'join'
   const [name, setName] = useState(() => playerName || getPersistentPlayerNameSync() || '');
@@ -28,6 +35,8 @@ export default function Lobby() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
+  // Invite link with a saved name: { code, name, status: 'pending' | 'joining', at }.
+  const [autoJoin, setAutoJoin] = useState(null);
 
   useEffect(() => { reportLobbyOpen(); }, []);
 
@@ -38,12 +47,51 @@ export default function Lobby() {
       });
     }
     const params = new URLSearchParams(window.location.search);
-    const code = params.get('room') || params.get('join');
-    if (code) {
-      setRoomId(code.trim().toUpperCase());
+    const code = (params.get('room') || params.get('join') || '').trim().toUpperCase();
+    if (!code) return;
+    setRoomId(code);
+    setMode('join');
+    // With a saved name and a connection the link lands in the room; otherwise the form waits,
+    // with the code filled in and nothing focused.
+    const saved = (playerName || getPersistentPlayerNameSync() || '').trim();
+    const online = typeof navigator === 'undefined' || navigator.onLine;
+    if (saved && online) setAutoJoin({ code, name: saved, status: 'pending', at: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (!autoJoin || autoJoin.status !== 'pending') return;
+    const elapsed = Date.now() - autoJoin.at;
+    if (!connected) {
+      const giveUp = setTimeout(() => {
+        setAutoJoin(null);
+        setError('Could not reach the game server. Check your connection and try again.');
+      }, Math.max(0, AUTO_JOIN_CONNECT_MS - elapsed));
+      return () => clearTimeout(giveUp);
+    }
+    const start = setTimeout(() => {
+      setAutoJoin(a => (a && a.status === 'pending' ? { ...a, status: 'joining' } : a));
+      setError('');
+      joinRoom(autoJoin.name, autoJoin.code, (res) => {
+        if (res.success) return; // joinRoom moves to the room
+        setAutoJoin(null);
+        setError(res.error || 'Could not join the room.');
+      });
+    }, Math.max(0, AUTO_JOIN_DELAY_MS - elapsed));
+    return () => clearTimeout(start);
+  }, [autoJoin, connected, joinRoom]);
+
+  // Step out of the automatic join: back to the form with the code kept, or drop the code entirely.
+  function cancelAutoJoin({ clearCode = false } = {}) {
+    setAutoJoin(null);
+    setError('');
+    if (clearCode) {
+      setRoomId('');
+      setMode(null);
+      try { window.history.replaceState(null, '', window.location.pathname); } catch {}
+    } else {
       setMode('join');
     }
-  }, []);
+  }
 
   useEffect(() => {
     const handleOnline = () => { setIsOffline(false); setError(''); };
@@ -59,7 +107,10 @@ export default function Lobby() {
   // The browser back button inside a form returns to the mode list instead of leaving the lobby.
   useEffect(() => {
     const handleLobbyBack = (e) => {
-      if (mode) {
+      if (autoJoin) {
+        e.preventDefault();
+        cancelAutoJoin({ clearCode: true });
+      } else if (mode) {
         e.preventDefault();
         setMode(null);
         setError('');
@@ -67,7 +118,7 @@ export default function Lobby() {
     };
     window.addEventListener('bingo:lobby-back', handleLobbyBack);
     return () => window.removeEventListener('bingo:lobby-back', handleLobbyBack);
-  }, [mode]);
+  }, [mode, autoJoin]);
 
   function requireName() {
     const cleanName = name.trim();
@@ -122,6 +173,9 @@ export default function Lobby() {
     });
   }
 
+  const levelIndex = Math.max(0, DIFFICULTIES.findIndex(d => d.id === difficulty));
+  const level = DIFFICULTIES[levelIndex];
+
   const submitLabel = loading
     ? 'One moment'
     : mode === 'bot'
@@ -130,11 +184,17 @@ export default function Lobby() {
         ? 'Make room'
         : 'Join room';
 
+  function handleBack() {
+    if (autoJoin) return cancelAutoJoin({ clearCode: true });
+    if (mode) return setMode(null);
+    navigate('/');
+  }
+
   return (
     <div className="lobby-page">
-      <button className="btn btn-ghost back-btn" onClick={() => mode ? setMode(null) : navigate('/')}>
+      <button className="btn btn-ghost back-btn" onClick={handleBack}>
         <ArrowLeftIcon size={16} />
-        <span>{mode ? 'Back' : 'Home'}</span>
+        <span>{mode || autoJoin ? 'Back' : 'Home'}</span>
       </button>
 
       <TopActions />
@@ -150,7 +210,38 @@ export default function Lobby() {
           <p>Play with friends in a room, or against the bot on your own.</p>
         </div>
 
-        {!mode && (
+        {autoJoin && (
+          <div className="side-panel auto-join-panel" role="status" aria-live="polite">
+            <div className="auto-join-head">
+              <span className="eyebrow">Invite link</span>
+              <span className="tag tag-brass">{autoJoin.code}</span>
+            </div>
+            <p className="auto-join-text">
+              <span className="auto-join-dot" aria-hidden="true" />
+              <span>Joining room {autoJoin.code} as <strong>{autoJoin.name}</strong></span>
+            </p>
+            <div className="auto-join-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline auto-join-rename"
+                onClick={() => cancelAutoJoin()}
+                disabled={autoJoin.status === 'joining'}
+              >
+                Use a different name
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost auto-join-cancel"
+                onClick={() => cancelAutoJoin({ clearCode: true })}
+                disabled={autoJoin.status === 'joining'}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!mode && !autoJoin && (
           <div className="mode-select">
             <button className="mode-card mode-card-wide" onClick={() => setMode('bot')}>
               <span className="mode-icon"><BotIcon size={22} /></span>
@@ -180,7 +271,7 @@ export default function Lobby() {
           </div>
         )}
 
-        {mode && (
+        {mode && !autoJoin && (
           <div className="lobby-form-wrap">
             <div className="form-mode-tabs" role="tablist">
               {[
@@ -219,22 +310,46 @@ export default function Lobby() {
               </div>
 
               {mode === 'bot' && (
-                <fieldset className="form-group difficulty-group">
-                  <legend>Difficulty</legend>
-                  {DIFFICULTIES.map(d => (
-                    <label key={d.id} className={`diff-option ${difficulty === d.id ? 'selected' : ''}`}>
-                      <input
-                        type="radio"
-                        name="difficulty"
-                        value={d.id}
-                        checked={difficulty === d.id}
-                        onChange={() => setDifficulty(d.id)}
-                      />
-                      <span className="diff-title">{d.label}</span>
-                      <span className="diff-desc">{d.desc}</span>
-                    </label>
-                  ))}
-                </fieldset>
+                <div className="form-group difficulty-group">
+                  <div className="difficulty-head">
+                    <label htmlFor="difficulty">Difficulty</label>
+                    <span className="tag tag-brass">{level.label}</span>
+                  </div>
+                  <div
+                    className="difficulty-slider"
+                    style={{ '--frac': levelIndex / Math.max(1, DIFFICULTIES.length - 1) }}
+                  >
+                    <input
+                      id="difficulty"
+                      type="range"
+                      min="0"
+                      max={DIFFICULTIES.length - 1}
+                      step="1"
+                      value={levelIndex}
+                      onChange={e => setDifficulty(DIFFICULTIES[Number(e.target.value)]?.id || 'pro')}
+                      aria-valuetext={level.label}
+                    />
+                    <div className="difficulty-stops" aria-hidden="true">
+                      {DIFFICULTIES.map((d, i) => (
+                        <span key={d.id} className={`difficulty-stop ${i <= levelIndex ? 'filled' : ''}`} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="difficulty-labels">
+                    {DIFFICULTIES.map((d, i) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className={`difficulty-label ${i === levelIndex ? 'active' : ''}`}
+                        aria-pressed={i === levelIndex}
+                        onClick={() => setDifficulty(d.id)}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="difficulty-desc">{level.desc}</p>
+                </div>
               )}
 
               {mode === 'join' && (

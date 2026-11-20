@@ -230,6 +230,7 @@ const MAX_LEFT_PLAYERS = 10;
 const SEAT_TIMEOUT_MS = 60 * 1000;          // away between rounds
 const AWAY_LIMIT_MS = 10 * 60 * 1000;       // away during a round
 const TURN_SKIP_MS = 20 * 1000;             // an away player's turn passes after this
+const HOST_AWAY_START_MS = 20 * 1000;       // after this long without the host, a ready player may start the next round
 const SNAPSHOT_MAX_AGE_MS = 30 * 60 * 1000; // restored on boot only if saved within this
 const SNAPSHOT_DEBOUNCE_MS = 1000;
 
@@ -280,6 +281,7 @@ function serializePlayer(p) {
     markedCells: Array.from(p.markedCells || []),
     bingoLines: Array.from(p.bingoLines || []),
     ready: Boolean(p.ready),
+    nextReady: Boolean(p.nextReady),
     wins: p.wins || 0
   };
 }
@@ -373,6 +375,7 @@ function restoreRooms(snapshot) {
           markedCells: new Set(p.markedCells || []),
           bingoLines: new Set(p.bingoLines || []),
           ready: Boolean(p.ready),
+          nextReady: Boolean(p.nextReady),
           wins: p.wins || 0,
           connected: false,
           awaySince: now,
@@ -434,6 +437,7 @@ function makePlayer(name, { id, token, wins = 0, socketId = null } = {}) {
     markedCells: new Set(),
     bingoLines: new Set(),
     ready: false,
+    nextReady: false,
     wins: wins || 0,
     connected: Boolean(socketId),
     awaySince: socketId ? null : Date.now(),
@@ -562,6 +566,7 @@ function broadcastRoom(room) {
     id: p.id,
     name: p.name,
     ready: p.ready,
+    nextReady: Boolean(p.nextReady),
     markedCells: Array.from(p.markedCells || []),
     bingoLines: Array.from(p.bingoLines || []),
     wins: p.wins || 0,
@@ -584,7 +589,9 @@ function broadcastRoom(room) {
     gameHistory: room.gameHistory || [],
     currentGameIndex: room.currentGameIndex,
     turnDeadline: room.turnDeadline || null,
-    turnSkippedFor: room.turnSkippedFor || null
+    turnSkippedFor: room.turnSkippedFor || null,
+    // Server clock, so clients can measure how long the host has been away without trusting their own.
+    serverNow: Date.now()
   };
 
   for (const p of Object.values(room.players)) {
@@ -594,6 +601,7 @@ function broadcastRoom(room) {
       id: bp.id,
       name: bp.name,
       ready: bp.ready,
+      nextReady: bp.nextReady,
       board: bp.id === p.id ? bp._rawBoard : [],
       markedCells: bp.markedCells,
       bingoLines: bp.bingoLines,
@@ -790,6 +798,62 @@ function finishRound(room, winners, draw) {
   });
 }
 
+// Move a finished room into the setup of the next round. Used by the host's Next round, by the
+// all-ready auto start and by a ready player when the host has been away for a while.
+function startNextRound(room, triggeredBy = 'host', byPlayer = null) {
+  if (room.status !== 'finished') return false;
+  touchRoomActivity(room);
+  const finished = room.currentGameIndex;
+  room.currentGameIndex++;
+  incrementFunnel('replays');
+  room.status = 'filling';
+  room.calledNumbers = [];
+  room.calledHistory = [];
+  room.currentTurnIndex = 0;
+  room.turnOrder = [];
+  room.roundPlayerCount = 0;
+  room.matchStartTime = null;
+
+  for (const p of Object.values(room.players)) {
+    p.board = [];
+    p.markedCells = new Set();
+    p.bingoLines = new Set();
+    p.ready = false;
+    p.nextReady = false;
+  }
+
+  logEvent('info', 'round-replayed', `Round ${finished} in ${room.id} replayed (${triggeredBy}${byPlayer ? ' by ' + byPlayer.name : ''}), round ${room.currentGameIndex} is being set up`, {
+    roomId: room.id,
+    round: room.currentGameIndex,
+    finishedRound: finished,
+    trigger: triggeredBy,
+    playerName: byPlayer ? byPlayer.name : undefined,
+    playerCount: Object.keys(room.players).length
+  });
+
+  markChanged(room);
+  armTurnTimer(room);
+  io.to(room.id).emit('game:replaying', { roomId: room.id, gameIndex: room.currentGameIndex });
+  broadcastRoom(room);
+  return true;
+}
+
+// Between rounds, once every connected player (at least two) is ready, the next round starts on
+// its own. Called whenever a ready flag or a connection changes in a finished room.
+function startIfAllReady(room) {
+  if (!room || room.status !== 'finished') return false;
+  const seated = connectedPlayers(room);
+  if (seated.length < 2 || !seated.every(p => p.nextReady)) return false;
+  return startNextRound(room, 'all-ready');
+}
+
+// How long the host has been away, or 0 when the host is connected.
+function hostAwayMs(room) {
+  const host = room.players[room.creatorId];
+  if (!host || host.connected !== false) return 0;
+  return Date.now() - (host.awaySince || Date.now());
+}
+
 // A round with one player left in it ends in their favour.
 function checkSinglePlayerWin(room) {
   if (room.status !== 'playing' || Object.keys(room.players).length !== 1) return;
@@ -889,6 +953,7 @@ function removeSeat(room, playerId, reason = 'left') {
   armTurnTimer(room);
   broadcastRoom(room);
   io.to(room.id).emit('player:left', { roomId: room.id, name: player.name });
+  startIfAllReady(room);
   return true;
 }
 
@@ -930,6 +995,7 @@ function seatReturningPlayer(socket, room, { player, wasLeft, fresh }, cb) {
 
   cb(seatReply(room, player));
   broadcastRoom(room);
+  startIfAllReady(room);
 }
 
 // A socket belongs to one room at a time. Before it creates or joins another, its current seat is
@@ -1168,6 +1234,7 @@ io.on('connection', (socket) => {
       }
       p.markedCells = new Set();
       p.bingoLines = new Set();
+      p.nextReady = false;
     }
 
     room.status = 'playing';
@@ -1265,40 +1332,58 @@ io.on('connection', (socket) => {
     cb({ success: true });
   });
 
-  // Replay game (creator only). The client sends the round it is finishing so a second tap for the
-  // same round, or a tap that arrives after the room already moved on, changes nothing.
+  // Replay game. The host may start the next round at any time once a round is finished. When the
+  // host has been away for HOST_AWAY_START_MS, any player who is marked ready may start instead.
+  // The client sends the round it is finishing so a second tap for the same round, or a tap that
+  // arrives after the room already moved on, changes nothing.
   on('game:replay', ({ gameIndex }, cb) => {
     const { room, player } = mySeat();
     if (!room) return cb(rejected('game:replay', null, 'Room not found'));
-    if (!player || room.creatorId !== player.id) return cb(rejected('game:replay', room, 'Only creator can replay'));
+    if (!player) return cb(rejected('game:replay', room, 'Player not found'));
+    const isHost = room.creatorId === player.id;
+    if (!isHost) {
+      if (room.status !== 'finished') return cb(rejected('game:replay', room, 'Only creator can replay'));
+      const away = hostAwayMs(room);
+      if (away === 0) return cb(rejected('game:replay', room, 'Only the host can start the next round while they are here.'));
+      if (away < HOST_AWAY_START_MS) return cb(rejected('game:replay', room, 'The host may still come back. Try again in a moment.'));
+      if (!player.nextReady) return cb(rejected('game:replay', room, 'Mark yourself ready first.'));
+    }
     if (room.status === 'filling') return cb({ success: true });
     if (room.status === 'playing') return cb(rejected('game:replay', room, 'A round is in progress.'));
     const finishing = Number(gameIndex);
     if (Number.isInteger(finishing) && finishing !== room.currentGameIndex) return cb({ success: true });
 
-    touchRoomActivity(room);
-    room.currentGameIndex++;
-    incrementFunnel('replays');
-    room.status = 'filling';
-    room.calledNumbers = [];
-    room.calledHistory = [];
-    room.currentTurnIndex = 0;
-    room.turnOrder = [];
-    room.roundPlayerCount = 0;
-    room.matchStartTime = null;
-
-    for (const p of Object.values(room.players)) {
-      p.board = [];
-      p.markedCells = new Set();
-      p.bingoLines = new Set();
-      p.ready = false;
+    if (!isHost) {
+      logEvent('info', 'host-away-start', `${player.name} started the next round in ${room.id} while the host was away`, {
+        roomId: room.id,
+        playerName: player.name,
+        hostAwayMs: hostAwayMs(room),
+        round: room.currentGameIndex
+      });
     }
-
-    markChanged(room);
-    armTurnTimer(room);
     cb({ success: true });
-    io.to(room.id).emit('game:replaying', { roomId: room.id, gameIndex: room.currentGameIndex });
+    startNextRound(room, isHost ? 'host' : 'host-away', player);
+  });
+
+  // Ready for the next round (anyone, between rounds). Once every connected player is ready the
+  // next round starts without the host pressing Next round.
+  on('game:ready', ({ ready }, cb) => {
+    const { room, player, elsewhere } = mySeat();
+    if (!room) return cb(rejected('game:ready', null, 'Room not found'));
+    if (elsewhere) return cb(rejected('game:ready', room, 'Your seat is open in another tab.'));
+    if (!player) return cb(rejected('game:ready', room, 'Player not found'));
+    if (room.status === 'playing') return cb(rejected('game:ready', room, 'A round is in progress.'));
+    if (room.status === 'filling') return cb(rejected('game:ready', room, 'The next round is already being set up.', false));
+
+    const next = Boolean(ready);
+    touchRoomActivity(room);
+    if (player.nextReady !== next) {
+      player.nextReady = next;
+      markChanged(room);
+    }
+    cb({ success: true, ready: next });
     broadcastRoom(room);
+    startIfAllReady(room);
   });
 
   // Transfer Creator
@@ -1374,6 +1459,7 @@ io.on('connection', (socket) => {
 
     markChanged(room);
     broadcastRoom(room);
+    startIfAllReady(room);
   });
 });
 
@@ -1414,6 +1500,16 @@ app.post('/api/analytics/event', (req, res) => {
     recordInstall({ userId });
   } else if (event === 'lobby_open') {
     incrementFunnel('lobbyOpens');
+  } else if (event === 'client_error') {
+    // Browser-side crashes reported by the client; kept short and capped by the client itself.
+    const b = req.body || {};
+    logEvent('error', 'client-error', String(b.message || 'Client error').slice(0, 200), {
+      kind: String(b.kind || '').slice(0, 40),
+      path: String(b.path || '').slice(0, 80),
+      version: String(b.version || '').slice(0, 20),
+      stack: String(b.stack || '').slice(0, 600),
+      ua: String(b.ua || '').slice(0, 160)
+    });
   }
   res.json({ success: true });
 });

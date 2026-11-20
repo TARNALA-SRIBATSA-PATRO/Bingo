@@ -1,17 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
-import { TrophyIcon, RefreshIcon, LogOutIcon, CrownIcon, EyeIcon } from './Icons';
+import { TrophyIcon, RefreshIcon, LogOutIcon, CrownIcon, EyeIcon, CheckIcon } from './Icons';
 import { checkBingoLines } from '../utils/botEngine';
 import BotBoardModal from './BotBoardModal';
 import Confetti from './Confetti';
 import { playSfx } from '../utils/sfx';
 import './GameOverModal.css';
 
+// After this long without the host, a ready player may start the next round (the server enforces it too).
+const HOST_AWAY_START_MS = 20 * 1000;
+
 export default function GameOverModal() {
-  const { gameOver, isCreator, replayGame, actualLeaveRoom, roomData, playerId, showNotif } = useGame();
+  const { gameOver, isCreator, replayGame, setNextReady, actualLeaveRoom, roomData, playerId, showNotif } = useGame();
   const [showBotBoard, setShowBotBoard] = useState(false);
   // Next round is sent once; the button waits for the answer so a second tap cannot follow.
   const [replayPending, setReplayPending] = useState(false);
+  const [readyPending, setReadyPending] = useState(false);
+  // Ticks once a second while the host is away, so the start-without-them option appears on time.
+  const [now, setNow] = useState(() => Date.now());
 
   const handleNextRound = () => {
     if (replayPending) return;
@@ -53,6 +59,35 @@ export default function GameOverModal() {
     return Array.from(new Set([...(gameOver?.botBingoLines || []), ...recalc]));
   }, [gameOver?.botBingoLines, botBoard, botMarkedCells]);
 
+  // Who is ready for the next round, and whether the host is here.
+  const players = roomData?.players || [];
+  const me = players.find(p => p.id === playerId) || null;
+  const host = players.find(p => p.id === roomData?.creatorId) || null;
+  const hostAway = !isBot && Boolean(host && host.connected === false);
+  // The room frame carries the server's clock; the host's absence is measured against that, not
+  // against this device's clock.
+  const clockSkew = roomData?.serverNow && roomData?.receivedAt ? roomData.serverNow - roomData.receivedAt : 0;
+  const hostAwayMs = hostAway && host.awaySince ? Math.max(0, now + clockSkew - host.awaySince) : 0;
+  const hostAwayLong = hostAway && hostAwayMs >= HOST_AWAY_START_MS;
+  const iAmReady = Boolean(me?.nextReady);
+
+  useEffect(() => {
+    if (!gameOver || !hostAway) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [gameOver, hostAway]);
+
+  const handleToggleReady = () => {
+    if (readyPending) return;
+    const next = !iAmReady;
+    setReadyPending(true);
+    setNextReady(next, (res) => {
+      setReadyPending(false);
+      if (res && !res.success && res.error) showNotif(res.error, 'error');
+    });
+  };
+
   // Hooks above run on every render; only now is it safe to bail out.
   if (!gameOver) return null;
 
@@ -69,6 +104,38 @@ export default function GameOverModal() {
       : isBot
         ? `The bot reached five lines first in round ${round}.`
         : `${winners.map(w => w.name).join(' and ')} reached five lines first.`;
+
+  // "Alpha ready, Bravo not yet, Charlie away"
+  const readyList = !isBot && players.length > 0 && (
+    <div className="ready-list" role="status" aria-live="polite">
+      <span className="eyebrow">Next round</span>
+      <p>
+        {players.map((p, i) => {
+          const state = p.connected === false ? 'away' : p.nextReady ? 'ready' : 'not yet';
+          const cls = state === 'ready' ? 'is-ready' : state === 'away' ? 'is-away' : 'is-waiting';
+          const who = p.id === playerId ? 'You' : p.name;
+          return (
+            <span key={p.id}>
+              {i > 0 && ', '}
+              <span className={`ready-item ${cls}`}>
+                {who}{!isBot && p.id === roomData?.creatorId ? ' (host)' : ''} {state}
+              </span>
+            </span>
+          );
+        })}
+      </p>
+    </div>
+  );
+
+  const readyStatus = (
+    <div className="waiting-host" role="status">
+      <span className="waiting-dot" aria-hidden="true" />
+      <span>Ready, waiting for the others</span>
+      <button type="button" className="btn btn-sm btn-ghost" onClick={handleToggleReady} disabled={readyPending}>
+        Cancel
+      </button>
+    </div>
+  );
 
   return (
     <>
@@ -119,11 +186,18 @@ export default function GameOverModal() {
               </>
             ) : isCreator ? (
               <>
-                <p className="host-note">Everyone still in the room will join the next round.</p>
+                {readyList}
+                <p className="host-note">Everyone still in the room will join the next round. It also starts on its own once everyone is ready.</p>
                 <button className="btn btn-primary" onClick={handleNextRound} disabled={replayPending} type="button">
                   <RefreshIcon size={16} />
                   <span>{replayPending ? 'Starting' : 'Next round'}</span>
                 </button>
+                {iAmReady ? readyStatus : (
+                  <button className="btn btn-secondary" onClick={handleToggleReady} disabled={readyPending} type="button">
+                    <CheckIcon size={16} />
+                    <span>Ready for the next round</span>
+                  </button>
+                )}
                 <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
                   <LogOutIcon size={15} />
                   <span>Close room and leave</span>
@@ -131,10 +205,25 @@ export default function GameOverModal() {
               </>
             ) : (
               <>
-                <div className="waiting-host" role="status">
-                  <span className="waiting-dot" aria-hidden="true" />
-                  <span>Waiting for the host to start the next round</span>
-                </div>
+                {readyList}
+                {iAmReady ? readyStatus : (
+                  <button className="btn btn-primary" onClick={handleToggleReady} disabled={readyPending} type="button">
+                    <CheckIcon size={16} />
+                    <span>Ready for the next round</span>
+                  </button>
+                )}
+                {hostAway && !hostAwayLong && (
+                  <p className="host-note">The host is away. Ready players can start without them after 20 seconds.</p>
+                )}
+                {hostAwayLong && !iAmReady && (
+                  <p className="host-note">The host is away. Mark yourself ready to start without them.</p>
+                )}
+                {hostAwayLong && iAmReady && (
+                  <button className="btn btn-primary host-away-start" onClick={handleNextRound} disabled={replayPending} type="button">
+                    <RefreshIcon size={16} />
+                    <span>{replayPending ? 'Starting' : 'Host is away. Start without them'}</span>
+                  </button>
+                )}
                 <button className="btn btn-ghost" onClick={() => actualLeaveRoom(true)} type="button">
                   <LogOutIcon size={15} />
                   <span>Leave room</span>
