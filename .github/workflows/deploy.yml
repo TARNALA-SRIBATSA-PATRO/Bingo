@@ -1,0 +1,47 @@
+name: Deploy to Render
+
+# Builds the client to catch mistakes early, then asks Render to deploy the
+# commit through its deploy hook. The hook URL lives in the repository secret
+# RENDER_DEPLOY_HOOK_URL (Render: service, Settings, Deploy Hook).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build client
+        working-directory: client
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Check server syntax
+        working-directory: server
+        run: node --check index.js && node --check analyticsStore.js && node --check aiNotificationEngine.js
+
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret is not set; skipping the deploy trigger."
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/hook.txt -w '%{http_code}' -X POST "$HOOK")
+          echo "Render responded with HTTP $code"
+          cat /tmp/hook.txt || true
+          [ "$code" -ge 200 ] && [ "$code" -lt 300 ]
