@@ -2,8 +2,18 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import { installPhoneLayout } from './utils/phoneLayout';
+import { installGlobalErrorReporting } from './utils/clientErrors';
 
 installPhoneLayout();
+installGlobalErrorReporting();
+
+// Low-end devices get the layout without decorative motion.
+try {
+  const mem = navigator.deviceMemory;
+  const cores = navigator.hardwareConcurrency;
+  const saveData = navigator.connection && navigator.connection.saveData;
+  if ((mem && mem <= 2) || (cores && cores <= 2) || saveData) document.documentElement.classList.add('lite');
+} catch {}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -1,0 +1,25 @@
+.error-boundary {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+}
+
+.error-panel {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+}
+
+.error-panel h2 { font-size: 1.3rem; }
+.error-panel p { font-size: 0.92rem; line-height: 1.5; }
+
+.error-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.error-actions .btn { flex: 1 1 140px; }

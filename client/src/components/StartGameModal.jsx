@@ -1,10 +1,14 @@
+import { useRef } from 'react';
 import { PlayIcon, CheckIcon } from './Icons';
 import './StartGameModal.css';
+import useModalA11y from '../hooks/useModalA11y';
 
 export default function StartGameModal({ onStart, onNotNow, playerCount = 2, roundIndex = 1 }) {
+  const panelRef = useRef(null);
+  useModalA11y(panelRef, onNotNow);
   return (
     <div className="modal-overlay" onClick={onNotNow} role="dialog" aria-modal="true" aria-labelledby="start-title">
-      <div className="modal-content start-game-modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="modal-content start-game-modal" onClick={(e) => e.stopPropagation()}>
         <div className="start-modal-icon">
           <CheckIcon size={24} />
         </div>

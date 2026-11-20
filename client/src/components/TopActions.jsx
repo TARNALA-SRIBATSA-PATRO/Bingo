@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
-import SoundToggle from './SoundToggle';
+import SoundMenu from './SoundMenu';
 import { ShareIcon, DownloadIcon } from './Icons';
 import { getDeferredInstallPrompt, clearDeferredInstallPrompt } from './InstallPwaButton';
 import { registerPushNotifications } from '../services/analytics';
@@ -88,7 +88,7 @@ export default function TopActions() {
       <button className="icon-btn" onClick={handleShare} type="button" title="Share app" aria-label="Share app">
         <ShareIcon size={17} />
       </button>
-      <SoundToggle />
+      <SoundMenu />
     </div>
   );
 }

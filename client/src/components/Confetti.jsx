@@ -10,7 +10,7 @@ export default function Confetti({ duration = 2600 }) {
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('lite')) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = window.innerWidth;

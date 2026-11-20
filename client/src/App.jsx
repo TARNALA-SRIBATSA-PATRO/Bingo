@@ -10,6 +10,7 @@ import PushNotificationPrompt from './components/PushNotificationPrompt';
 import UpdateManager from './components/UpdateManager';
 import BackNavigationHandler from './components/BackNavigationHandler';
 import Footer from './components/Footer';
+import ErrorBoundary from './components/ErrorBoundary';
 import LandingPage from './pages/LandingPage';
 import HowToPlay from './pages/HowToPlay';
 import Lobby from './pages/Lobby';
@@ -38,6 +39,7 @@ function App() {
               <GlobalModals />
               <InstallPwaButton />
               <PushNotificationPrompt />
+              <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/how-to-play" element={<HowToPlay />} />
@@ -50,6 +52,7 @@ function App() {
                 <Route path="/dashboard" element={<Navigate to="/" replace />} />
                 <Route path="/cpanel" element={<Navigate to="/" replace />} />
               </Routes>
+              </ErrorBoundary>
               <Footer />
             </div>
           </GameProvider>

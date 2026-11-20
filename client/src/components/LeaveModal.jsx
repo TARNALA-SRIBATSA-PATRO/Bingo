@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useGame } from '../context/GameContext';
 import './LeaveModal.css';
+import useModalA11y from '../hooks/useModalA11y';
 
 export default function LeaveModal({ onClose }) {
+  const panelRef = useRef(null);
+  useModalA11y(panelRef, onClose, Boolean(roomData));
   const { roomData, playerId, isCreator, actualLeaveRoom, transferCreator } = useGame();
   const [selectedTarget, setSelectedTarget] = useState('');
   const [error, setError] = useState('');
@@ -42,7 +45,7 @@ export default function LeaveModal({ onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content leave-modal">
+      <div ref={panelRef} className="modal-content leave-modal">
         <h3>{isBot ? 'Exit Match' : 'Leave Room'}</h3>
         
         {isBot ? (

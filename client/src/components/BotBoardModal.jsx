@@ -3,6 +3,7 @@ import { BotIcon, CheckIcon } from './Icons';
 import { ALL_LINES, checkBingoLines } from '../utils/botEngine';
 import { getLayoutZoom } from '../utils/phoneLayout';
 import './BotBoardModal.css';
+import useModalA11y from '../hooks/useModalA11y';
 
 const BINGO_LETTERS = ['B', 'I', 'N', 'G', 'O'];
 
@@ -54,6 +55,8 @@ export default function BotBoardModal({
   difficulty = 'pro', 
   onClose 
 }) {
+  const panelRef = useRef(null);
+  useModalA11y(panelRef, onClose);
   const boardRef = useRef(null);
   const [lineCoords, setLineCoords] = useState({});
   const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
@@ -145,7 +148,7 @@ export default function BotBoardModal({
 
   return (
     <div className="modal-overlay bot-board-modal-overlay" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="modal-content bot-board-modal" onClick={e => e.stopPropagation()}>
+      <div ref={panelRef} className="modal-content bot-board-modal" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="bot-board-header">

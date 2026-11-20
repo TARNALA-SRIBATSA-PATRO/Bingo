@@ -4,15 +4,27 @@
 // muted by default).
 
 const MUTE_KEY = 'bingo_bgm_muted';
+const SFX_KEY = 'bingo_sfx_muted';
 let ctx = null;
 
 function isMuted() {
+  return isSfxMuted();
+}
+
+// Effects follow the music switch until the player sets them separately.
+export function isSfxMuted() {
   try {
-    const v = localStorage.getItem(MUTE_KEY);
-    return v === null ? true : v === 'true';
+    const own = localStorage.getItem(SFX_KEY);
+    if (own !== null) return own === 'true';
+    const music = localStorage.getItem(MUTE_KEY);
+    return music === null ? true : music === 'true';
   } catch {
     return true;
   }
+}
+
+export function setSfxMuted(muted) {
+  try { localStorage.setItem(SFX_KEY, String(Boolean(muted))); } catch {}
 }
 
 function getCtx() {

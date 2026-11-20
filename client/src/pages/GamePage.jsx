@@ -252,6 +252,19 @@ export default function GamePage() {
     });
   }
 
+  // Arrow keys move between cells on the card; disabled cells are skipped.
+  function handleGridKey(e) {
+    const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 5, ArrowUp: -5 }[e.key];
+    if (!delta || !boardRef.current) return;
+    const cells = Array.from(boardRef.current.querySelectorAll('.game-cell'));
+    let i = cells.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    for (let n = i + delta; n >= 0 && n < cells.length; n += delta) {
+      if (!cells[n].disabled) { cells[n].focus(); return; }
+    }
+  }
+
   const handleShare = () => triggerShare({ roomId: roomData.id, showNotif, onFallbackModal: setShareModalData });
   const handleCopyId = async () => {
     try {
@@ -345,7 +358,7 @@ export default function GamePage() {
           </div>
 
           <div className="board-wrap">
-            <div className={`game-board ${!isMyTurn ? 'waiting' : ''}`} ref={boardRef} role="grid">
+            <div className={`game-board ${!isMyTurn ? 'waiting' : ''}`} ref={boardRef} role="grid" onKeyDown={handleGridKey}>
               {myBoard.map((row, r) =>
                 row.map((val, c) => {
                   const isMarked = myMarked.has(val);

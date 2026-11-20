@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { copyToClipboard } from '../utils/shareUtils';
 import { CopyIcon, CheckIcon, ShareIcon } from './Icons';
 import './ShareModal.css';
+import useModalA11y from '../hooks/useModalA11y';
 
 export default function ShareModal({ data, onClose }) {
+  const panelRef = useRef(null);
+  useModalA11y(panelRef, onClose, Boolean(data));
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -32,7 +35,7 @@ export default function ShareModal({ data, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content share-modal" onClick={e => e.stopPropagation()}>
+      <div ref={panelRef} className="modal-content share-modal" onClick={e => e.stopPropagation()}>
         <div className="share-modal-header">
           <div className="share-modal-title">
             <ShareIcon size={20} />

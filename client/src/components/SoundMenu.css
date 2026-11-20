@@ -1,0 +1,57 @@
+.sound-menu { position: relative; }
+.sound-menu .icon-btn.is-on { color: var(--brass); }
+
+.sound-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  animation: rise-in var(--t) var(--ease);
+}
+
+.sound-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.925rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.sound-row:hover { background: var(--surface-2); }
+
+.sound-row input[type="checkbox"] {
+  appearance: none;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--line-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease);
+}
+.sound-row input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform var(--t-fast) var(--ease);
+}
+.sound-row input[type="checkbox"]:checked { background: var(--brass); }
+.sound-row input[type="checkbox"]:checked::after { transform: translateX(16px); background: var(--brass-ink); }
