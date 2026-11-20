@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import SoundToggle from '../components/SoundToggle';
+import TopActions from '../components/TopActions';
 import { ArrowLeftIcon, PlayIcon, CopyIcon, CrownIcon, ShuffleIcon, CheckIcon, CrosshairIcon, TrophyIcon, RefreshIcon } from '../components/Icons';
 import './HowToPlay.css';
 
@@ -101,7 +101,7 @@ export default function HowToPlay() {
 
   return (
     <div className="htp-page">
-      <SoundToggle className="sound-toggle-floating" />
+      <TopActions />
 
       <header className="htp-header">
         <button className="btn btn-ghost back-btn" onClick={() => navigate('/')}>

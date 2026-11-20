@@ -108,6 +108,10 @@ const InstallPwaButton = () => {
     sessionStorage.setItem('bingo_pwa_dismissed', 'true');
   };
 
+  // The floating pill was replaced by the icon in TopActions; this component only keeps the
+  // install prompt and the post-install push registration alive.
+  return null;
+
   // If already installed or dismissed, do not render
   if (isInstalled || isDismissed) {
     return null;

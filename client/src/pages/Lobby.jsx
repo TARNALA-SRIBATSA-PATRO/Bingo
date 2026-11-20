@@ -6,7 +6,7 @@ import {
   getPersistentPlayerNameSync,
   setPersistentPlayerName
 } from '../utils/storageUtils';
-import SoundToggle from '../components/SoundToggle';
+import TopActions from '../components/TopActions';
 import { reportLobbyOpen } from '../services/analytics';
 import { ArrowLeftIcon, PlusIcon, KeyIcon, BotIcon, ChevronRightIcon } from '../components/Icons';
 import './Lobby.css';
@@ -137,7 +137,7 @@ export default function Lobby() {
         <span>{mode ? 'Back' : 'Home'}</span>
       </button>
 
-      <SoundToggle className="sound-toggle-floating" />
+      <TopActions />
 
       <div className="lobby-content">
         <div className="lobby-title">

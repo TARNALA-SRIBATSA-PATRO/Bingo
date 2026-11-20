@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import SoundToggle from '../components/SoundToggle';
+import TopActions from '../components/TopActions';
 import { PlayIcon, BookIcon } from '../components/Icons';
 import './LandingPage.css';
 
@@ -28,7 +28,7 @@ export default function LandingPage() {
 
   return (
     <div className="landing-page">
-      <SoundToggle className="sound-toggle-floating" />
+      <TopActions />
 
       <main className="landing-content">
         <section className="hero">

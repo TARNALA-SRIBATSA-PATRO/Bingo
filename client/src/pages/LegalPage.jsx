@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import LegalContent from '../components/LegalContent';
-import SoundToggle from '../components/SoundToggle';
+import TopActions from '../components/TopActions';
 import { ArrowLeftIcon } from '../components/Icons';
 import './LegalPage.css';
 
@@ -9,7 +9,7 @@ export default function LegalPage() {
 
   return (
     <div className="legal-page">
-      <SoundToggle className="sound-toggle-floating" />
+      <TopActions />
 
       <button className="btn btn-ghost back-btn legal-back-btn" onClick={() => navigate('/')}>
         <ArrowLeftIcon size={16} />
